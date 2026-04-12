@@ -95,6 +95,7 @@ Font font_load_from_file(SDL_Renderer *renderer, const char *file_path)
     Font font = {0};
 
     SDL_Surface *font_surface = surface_from_file(file_path);
+    scc(SDL_SetSurfaceColorKey(font_surface, true, 0xFF000000)); //
     font.spritesheet = scp(SDL_CreateTextureFromSurface(renderer, font_surface));
 
     SDL_DestroySurface(font_surface);
@@ -123,7 +124,7 @@ Font font_load_from_file(SDL_Renderer *renderer, const char *file_path)
  * @scale: 放大倍数
  * 在指定位置和缩放比例下渲染单个字符
  */
-void render_char(SDL_Renderer *renderer, Font *font, char c, Vec2f pos, float scale)
+void render_char(SDL_Renderer *renderer, const Font *font, char c, Vec2f pos, float scale)
 {
     const SDL_FRect dst_rect = {
         .x = pos.x,
@@ -134,6 +135,13 @@ void render_char(SDL_Renderer *renderer, Font *font, char c, Vec2f pos, float sc
     assert(c >= ASCII_DISPLAY_LOW && c <= ASCII_DISPLAY_HIGH);
     const size_t index = c - ASCII_DISPLAY_LOW;
     scc(SDL_RenderTexture(renderer, font->spritesheet, &font->glyph_table[index], &dst_rect));
+}
+
+
+void set_texture_color(SDL_Texture *texture, Uint32 color)
+{
+    scc(SDL_SetTextureColorMod(texture, (color >> 0) & 0xFF, (color >> 8) & 0xFF, (color >> 16) & 0xFF));
+    scc(SDL_SetTextureAlphaMod(texture, ((color >> 24) & 0xFF)));
 }
 
 /**
@@ -149,8 +157,7 @@ void render_char(SDL_Renderer *renderer, Font *font, char c, Vec2f pos, float sc
  */
 void render_text_sized(SDL_Renderer *renderer, Font *font, const char *text, size_t text_size, Vec2f pos, Uint32 color, float scale)
 {
-    scc(SDL_SetTextureColorMod(font->spritesheet, (color >> 0) & 0xFF, (color >> 8) & 0xFF, (color >> 16) & 0xFF));
-    scc(SDL_SetTextureAlphaMod(font->spritesheet, ((color >> 24) & 0xFF)));
+   set_texture_color(font->spritesheet, color);
 
     Vec2f pen = pos;
     for (size_t i = 0; i < text_size; ++i)
@@ -197,19 +204,28 @@ size_t buffer_cursor = 0;
  * @color: 光标颜色(RGBA格式)
  * 在当前光标位置渲染一个矩形光标
  */
-void render_cursor(SDL_Renderer *renderer, Uint32 color)
+void render_cursor(SDL_Renderer *renderer, const Font *font)
 {
+    const Vec2f pos = { .x = buffer_cursor * FONT_CHAR_WIDTH * FONT_SCALE, .y = 0.0f};
+
     SDL_FRect rect = {
-        .x = buffer_cursor * FONT_CHAR_WIDTH * FONT_SCALE,
-        .y = 0.0f,
+        .x = pos.x,
+        .y = pos.y,
         .w = FONT_CHAR_WIDTH * FONT_SCALE,
         .h = FONT_CHAR_HEIGHT * FONT_SCALE
     };
-    scc(SDL_SetRenderDrawColor(renderer, UNHEX(color)));
+
+    scc(SDL_SetRenderDrawColor(renderer, UNHEX(0xFFFFFFFF)));
     scc(SDL_RenderFillRect(renderer, &rect));
+
+    set_texture_color(font->spritesheet, 0xFF000000);
+    if(buffer_cursor < buffer_size){
+        render_char(renderer, font, buffer[buffer_cursor], pos, FONT_SCALE);
+    }
 }
 
 // TODO: 移动鼠标
+// TODO: 光标闪烁
 // TODO: 多行显示
 // TODO: 保存和加载文件
 
@@ -248,13 +264,29 @@ int main()
 
             case SDL_EVENT_KEY_DOWN:
             {
-                if (event.key.key == SDLK_BACKSPACE)
+                switch (event.key.key)
                 {
-                    if(buffer_size > 0)
+                    case(SDLK_BACKSPACE):{
+                        if(buffer_size > 0)
                     {
                         buffer_size -= 1;
                         buffer_cursor = buffer_size;
                     }
+                    }break;
+                    
+                    case(SDLK_LEFT):{
+                        if(buffer_cursor > 0)
+                        {
+                            buffer_cursor -= 1;
+                        }
+                    }break;
+
+                    case(SDLK_RIGHT):{
+                        if(buffer_cursor < buffer_size)
+                        {
+                            buffer_cursor += 1;
+                        }
+                    }break;
                 }
             }
             break;
@@ -278,7 +310,7 @@ int main()
         scc(SDL_RenderClear(renderer));
 
         render_text_sized(renderer, &font, buffer, buffer_size, (Vec2f){0.0, 0.0}, 0xFFFFFFFF, FONT_SCALE);
-        render_cursor(renderer, 0xFFFFFFFF);
+        render_cursor(renderer, &font);
 
         SDL_RenderPresent(renderer);
     }
