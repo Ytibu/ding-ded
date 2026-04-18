@@ -1,6 +1,10 @@
 #ifndef __LA_H__
 #define __LA_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     float x, y;
 } Vec2f;
@@ -12,5 +16,9 @@ Vec2f vec2f_add(Vec2f a, Vec2f b);
 Vec2f vec2f_sub(Vec2f a, Vec2f b);
 Vec2f vec2f_mul(Vec2f a, Vec2f b);
 Vec2f vec2f_div(Vec2f a, Vec2f b);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // __LA_H__ 

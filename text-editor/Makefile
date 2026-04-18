@@ -12,7 +12,7 @@ TARGET := te.exe
 SRC := main.c
 
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS) $(LIBS) la.c
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS) $(LIBS) la.c editor.c
 #	cp -f $(SDL_DLL) .
 
 .PHONY: clean

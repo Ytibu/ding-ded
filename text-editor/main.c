@@ -6,10 +6,13 @@
 #include "SDL3/SDL.h"
 #include "SDL3/SDL_render.h"
 #include "SDL3_ttf/SDL_ttf.h"
+
 #include "./la.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "./stb_image.h"
+
+#include "./editor.h"
 
 #define FONT_WIDTH 128
 #define FONT_HEIGHT 64
@@ -137,7 +140,6 @@ void render_char(SDL_Renderer *renderer, const Font *font, char c, Vec2f pos, fl
     scc(SDL_RenderTexture(renderer, font->spritesheet, &font->glyph_table[index], &dst_rect));
 }
 
-
 void set_texture_color(SDL_Texture *texture, Uint32 color)
 {
     scc(SDL_SetTextureColorMod(texture, (color >> 0) & 0xFF, (color >> 8) & 0xFF, (color >> 16) & 0xFF));
@@ -157,7 +159,7 @@ void set_texture_color(SDL_Texture *texture, Uint32 color)
  */
 void render_text_sized(SDL_Renderer *renderer, Font *font, const char *text, size_t text_size, Vec2f pos, Uint32 color, float scale)
 {
-   set_texture_color(font->spritesheet, color);
+    set_texture_color(font->spritesheet, color);
 
     Vec2f pen = pos;
     for (size_t i = 0; i < text_size; ++i)
@@ -183,20 +185,21 @@ void render_text_sized(SDL_Renderer *renderer, Font *font, const char *text, siz
  */
 void render_text(SDL_Renderer *renderer, Font *font, const char *text, Vec2f pos, Uint32 color, float scale)
 {
-    render_text_sized(renderer, font, text, SDL_strlen(text), pos, color, scale);
+    render_text_sized(renderer, font, text, strlen(text), pos, color, scale);
 }
 
 #define BUFFER_CAPACITY 1024
 
 char buffer[BUFFER_CAPACITY];
 size_t buffer_size = 0;
-size_t buffer_cursor = 0;
 
-#define UNHEX(color) \
-    ((color) >> (8 * 0)) & 0xFF, \
-    ((color) >> (8 * 1)) & 0xFF, \
-    ((color) >> (8 * 2)) & 0xFF, \
-    ((color) >> (8 * 3)) & 0xFF
+Editor editor = {0};
+
+#define UNHEX(color)                 \
+    ((color) >> (8 * 0)) & 0xFF,     \
+        ((color) >> (8 * 1)) & 0xFF, \
+        ((color) >> (8 * 2)) & 0xFF, \
+        ((color) >> (8 * 3)) & 0xFF
 
 /**
  * render_cursor - 渲染文本光标
@@ -206,28 +209,25 @@ size_t buffer_cursor = 0;
  */
 void render_cursor(SDL_Renderer *renderer, const Font *font)
 {
-    const Vec2f pos = { .x = buffer_cursor * FONT_CHAR_WIDTH * FONT_SCALE, .y = 0.0f};
+    const Vec2f pos = {.x = editor.cursor_col * FONT_CHAR_WIDTH * FONT_SCALE,
+                       .y = editor.cursor_row * FONT_CHAR_HEIGHT * FONT_SCALE};
 
     SDL_FRect rect = {
         .x = pos.x,
         .y = pos.y,
         .w = FONT_CHAR_WIDTH * FONT_SCALE,
-        .h = FONT_CHAR_HEIGHT * FONT_SCALE
-    };
+        .h = FONT_CHAR_HEIGHT * FONT_SCALE};
 
     scc(SDL_SetRenderDrawColor(renderer, UNHEX(0xFFFFFFFF)));
     scc(SDL_RenderFillRect(renderer, &rect));
 
-    set_texture_color(font->spritesheet, 0xFF000000);
-    if(buffer_cursor < buffer_size){
-        render_char(renderer, font, buffer[buffer_cursor], pos, FONT_SCALE);
+    const char *c = editor_char_under_cursor(&editor);
+    if (c)
+    {
+        set_texture_color(font->spritesheet, 0xFF000000);
+        render_char(renderer, font, *c, pos, FONT_SCALE);
     }
 }
-
-// TODO: 移动鼠标
-// TODO: 光标闪烁
-// TODO: 多行显示
-// TODO: 保存和加载文件
 
 /**
  * main - 主程序入口
@@ -257,59 +257,55 @@ int main()
             switch (event.type)
             {
             case SDL_EVENT_QUIT:
-            {
                 quit = true;
-            }
             break;
-
             case SDL_EVENT_KEY_DOWN:
             {
                 switch (event.key.key)
                 {
-                    case(SDLK_BACKSPACE):{
-                        if(buffer_size > 0)
-                    {
-                        buffer_size -= 1;
-                        buffer_cursor = buffer_size;
-                    }
-                    }break;
-                    
-                    case(SDLK_LEFT):{
-                        if(buffer_cursor > 0)
-                        {
-                            buffer_cursor -= 1;
-                        }
-                    }break;
-
-                    case(SDLK_RIGHT):{
-                        if(buffer_cursor < buffer_size)
-                        {
-                            buffer_cursor += 1;
-                        }
-                    }break;
+                case SDLK_BACKSPACE:
+                    editor_backspace(&editor);
+                    break;
+                case SDLK_RETURN:
+                    editor_insert_new_line(&editor);
+                case SDLK_DELETE:
+                    editor_delete(&editor);
+                    break;
+                case SDLK_UP:
+                    if(editor.cursor_row > 0)
+                        editor.cursor_row -= 1;
+                    break;
+                case SDLK_DOWN:
+                    editor.cursor_row += 1;
+                    break;
+                case SDLK_LEFT:
+                    if (editor.cursor_col > 0)
+                        editor.cursor_col -= 1;
+                    break;
+                case SDLK_RIGHT:
+                    editor.cursor_col += 1;
+                    break;
                 }
+                case SDLK_F2:
+                    editor_save_to_file(&editor, "output");
             }
             break;
-            case SDL_EVENT_TEXT_INPUT:
-            {
-                size_t text_size = SDL_strlen(event.text.text);
-                const size_t free_space = BUFFER_CAPACITY - buffer_size;
-                if (text_size > free_space)
-                {
-                    text_size = free_space;
-                }
-                memcpy(buffer + buffer_size, event.text.text, text_size);
-                buffer_size += text_size;
-                buffer_cursor = buffer_size;
-            }break;
 
+            case SDL_EVENT_TEXT_INPUT:
+                editor_insert_text_before_cursor(&editor, event.text.text);
+                break;
             }
         }
 
         scc(SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0));
         scc(SDL_RenderClear(renderer));
 
-        render_text_sized(renderer, &font, buffer, buffer_size, (Vec2f){0.0, 0.0}, 0xFFFFFFFF, FONT_SCALE);
+        for (size_t row = 0; row < editor.size; ++row)
+        {
+            const Line *line = editor.lines + row;
+            render_text_sized(renderer, &font, line->chars, line->size, (Vec2f){0.0f, row * FONT_CHAR_HEIGHT * FONT_SCALE}, 0xFFFFFFFF, FONT_SCALE);
+        }
+
         render_cursor(renderer, &font);
 
         SDL_RenderPresent(renderer);

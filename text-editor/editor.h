@@ -1,0 +1,34 @@
+#ifndef __EDITOR_H__
+#define __EDITOR_H__
+
+#include <stddef.h>
+
+typedef struct {
+    size_t capacity;
+    size_t size;
+    char *chars;
+} Line; //定义行结构体，包含字符数组、当前大小和容量。
+
+
+void line_insert_text_before(Line *line, const char *text, size_t *col);
+void line_backspace(Line *line, size_t *col);
+void line_delete(Line *line, size_t *col);
+
+
+typedef struct{
+    size_t capacity;
+    size_t size;
+    Line *lines;
+    size_t cursor_row;
+    size_t cursor_col;
+} Editor; //定义编辑器结构体，包含行数组、当前行数、容量以及光标位置。
+
+void editor_save_to_file(const Editor *editor, const char* filePath);
+void editor_insert_text_before_cursor(Editor *editor, const char *text);
+void editor_backspace(Editor *editor);
+void editor_delete(Editor *editor);
+void editor_insert_new_line(Editor *editor);
+void editor_push_new_line(Editor *editor);
+const char *editor_char_under_cursor(const Editor *editor);
+
+#endif // __EDITOR_H__
