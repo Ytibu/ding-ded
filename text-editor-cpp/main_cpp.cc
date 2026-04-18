@@ -205,7 +205,7 @@ int main(void)
                     editor.editor_move_right();
                     break;
                 case SDLK_F2:
-                    editor.editor_save_to_file("output");
+                    editor.editor_save_to_file("output.txt");
                     break;
                 default:
                     break;

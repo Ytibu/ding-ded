@@ -229,13 +229,29 @@ void render_cursor(SDL_Renderer *renderer, const Font *font)
     }
 }
 
+void useage(FILE *stream)
+{
+    fprintf(stream, "Usage: text-editor [file]\n");
+}
 /**
  * main - 主程序入口
  * 初始化SDL和文本编辑器，处理事件循环，管理文本输入和光标移动
  * Return: 程序退出码
  */
-int main()
+int main(int argc, char *argv[])
 {
+    const char *filePath = NULL;
+    if (argc > 1){
+        filePath = argv[1];
+    }
+    if(filePath){
+        FILE *file = fopen(filePath, "r");
+        if (file) {
+            editor_load_from_file(&editor, file);
+        }
+        fclose(file);
+    }
+
     scc(SDL_Init(SDL_INIT_VIDEO));
 
     SDL_Window *window =
@@ -287,7 +303,7 @@ int main()
                     break;
                 }
                 case SDLK_F2:
-                    editor_save_to_file(&editor, "output");
+                    editor_save_to_file(&editor, "output.txt");
             }
             break;
 

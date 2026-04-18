@@ -98,7 +98,7 @@ void Editor::editor_save_to_file(const char *filePath) const
     if (file == NULL)
     {
         fprintf(stdout, "ERROR: can't open file '%s': %s\n", filePath, strerror(errno));
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     for (size_t row = 0; row < lines.size(); ++row)

@@ -8,12 +8,11 @@ CFLAGS := -Wall -Werror -std=c11 -pedantic -ggdb -I$(SDL_ROOT)/include
 LDFLAGS := -L$(SDL_ROOT)/lib
 LIBS := -lSDL3 -lm
 
-TARGET := te.exe
+TARGET := te
 SRC := main.c
 
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS) $(LIBS) la.c editor.c
-#	cp -f $(SDL_DLL) .
 
 .PHONY: clean
 

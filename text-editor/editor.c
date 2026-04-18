@@ -6,10 +6,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "./file.h"
+
+#define SV_IMPLEMENTATION
+#include "./sv.h"
+
 #define LINE_INIT_CAPACITY 1024
 #define EDITOR_INIT_CAPACITY 128
 
-// 行扩容::确保行缓冲区至少还能容纳 needed_capacity 个字节。
+
 static void line_grow(Line *line, size_t needed_capacity)
 {
     size_t new_capacity = line->capacity;
@@ -29,15 +34,30 @@ static void line_grow(Line *line, size_t needed_capacity)
     }
 }
 
-// 光标前插入内容::在指定列前插入 text，并将后续内容右移。
+void line_append_text(Line *line, const char *text)
+{
+    line_append_text_sized(line, text, strlen(text));
+}
+
+void line_append_text_sized(Line *line, const char *text, size_t text_size)
+{
+    size_t col = line->size;
+    line_insert_text_before_sized(line, text, text_size, &col);
+}
+
+
 void line_insert_text_before(Line *line, const char *text, size_t *col)
+{
+    line_insert_text_before_sized(line, text, strlen(text), col);
+}
+
+void line_insert_text_before_sized(Line *line, const char *text, size_t text_size, size_t *col)
 {
     if(*col > line->size)
     {
         *col = line->size;
     }
 
-    const size_t text_size = strlen(text);
     line_grow(line, text_size);
     memmove(line->chars + *col + text_size, line->chars + *col, line->size - *col);
     memcpy(line->chars + *col, text, text_size);
@@ -45,7 +65,6 @@ void line_insert_text_before(Line *line, const char *text, size_t *col)
     *col += text_size;
 }
 
-// 删除光标对应的字符::删除 col 前一个字符并将后续内容左移。
 void line_backspace(Line *line, size_t *col)
 {
     if(*col > line->size)
@@ -61,8 +80,7 @@ void line_backspace(Line *line, size_t *col)
     }
 }
 
-// 删除 col 位置字符并将后续内容左移。
-// TODO: 处理行缩容
+
 void line_delete(Line *line, size_t *col)
 {
     if(*col > line->size)
@@ -78,7 +96,6 @@ void line_delete(Line *line, size_t *col)
 }
 
 
-// 编辑区扩容::确保行缓冲区至少还能容纳 needed_capacity 个字节。
 static void editor_grow(Editor *editor, size_t needed_capacity)
 {
     size_t new_capacity = editor->capacity;
@@ -98,13 +115,21 @@ static void editor_grow(Editor *editor, size_t needed_capacity)
     }
 }
 
+void editor_init(Editor *editor)
+{
+    if(editor->cursor_row >= editor->size)
+    {
+        if(editor->size > 0){
+            editor->cursor_row = editor->size - 1;
+        }else{
+            editor_push_new_line(editor);
+        }
+    }
+}
 
 void editor_insert_new_line(Editor *editor)
 {
-    if(editor->cursor_row > editor->size)
-    {
-        editor->cursor_row = editor->size;
-    }
+    editor_init(editor);
 
     editor_grow(editor, 1);
 
@@ -124,49 +149,23 @@ void editor_push_new_line(Editor *editor)
     memset(&editor->lines[editor->size], 0, sizeof(editor->lines[0]));
     editor->size += 1;
 }
-
-// 在光标位置前插入文本。 
+ 
 void editor_insert_text_before_cursor(Editor *editor, const char *text)
 {
-    if(editor->cursor_row >= editor->size)
-    {
-        if(editor->size > 0){
-            editor->cursor_row = editor->size - 1;
-        }else{
-            editor_push_new_line(editor);
-        }
-    }
+    editor_init(editor);
 
     line_insert_text_before(&editor->lines[editor->cursor_row], text, &editor->cursor_col);
 }
 
-// 删除光标前一个字符。
 void editor_backspace(Editor *editor)
 {
-    if(editor->cursor_row >= editor->size)
-    {
-        if(editor->size > 0){
-            editor->cursor_row = editor->size - 1;
-        }else{
-            editor_push_new_line(editor);
-        }
-    }
-
+    editor_init(editor);
     line_backspace(&editor->lines[editor->cursor_row], &editor->cursor_col);
 }
 
-// 删除光标处字符。
 void editor_delete(Editor *editor)
 {
-    if(editor->cursor_row >= editor->size)
-    {
-        if(editor->size > 0){
-            editor->cursor_row = editor->size - 1;
-        }else{
-            editor_push_new_line(editor);
-        }
-    }
-
+    editor_init(editor);
     line_delete(&editor->lines[editor->cursor_row], &editor->cursor_col);
 }
 
@@ -186,11 +185,39 @@ void editor_save_to_file(const Editor *editor, const char* filePath)
     FILE *file = fopen(filePath, "w");
     if(file == NULL){
         fprintf(stdout, "ERROR: can't open file '%s': %s\n", filePath, strerror(errno));
-        exit(1);
+        exit(EXIT_FAILURE);
     }
     for(size_t row = 0; row < editor->size; ++row){
         fwrite(editor->lines[row].chars, 1, editor->lines[row].size, file);
         fputc('\n', file);
     }
     fclose(file);
+}
+
+void editor_load_from_file(Editor *editor, FILE *file)
+{
+    editor_init(editor);
+
+    static char chunk[640 * 1024];
+    while(!feof(file)){
+        size_t n = fread(chunk, 1, sizeof(chunk), file);
+        String_View chunk_sv = {
+            .data = chunk,
+            .count = n,
+        };
+
+        while(chunk_sv.count > 0){
+            String_View chunk_line = {0};
+            Line *line = &editor->lines[editor->size - 1];
+            if(sv_try_chop_by_delim(&chunk_sv, '\n', &chunk_line)){
+                line_append_text_sized(line, chunk_line.data, chunk_line.count);
+                editor_insert_new_line(editor);
+            }else{
+                line_append_text_sized(line, chunk_sv.data, chunk_sv.count);
+                chunk_sv = SV_NULL;
+            }
+        }
+    }
+
+    editor->cursor_row = 0;
 }
