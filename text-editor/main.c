@@ -14,6 +14,11 @@
 
 #include "./editor.h"
 
+#define SCREEN_WIDTH 800
+#define SCREEN_HEIGHT 600
+#define FPS 60
+#define DELTA_TIME (1.0f / FPS)
+
 #define FONT_WIDTH 128
 #define FONT_HEIGHT 64
 #define FONT_COLS 18
@@ -194,6 +199,8 @@ char buffer[BUFFER_CAPACITY];
 size_t buffer_size = 0;
 
 Editor editor = {0};
+Vec2f camer_pos = {0.0f, 0.0f};
+Vec2f camer_vel = {0.0f, 0.0f};
 
 #define UNHEX(color)                 \
     ((color) >> (8 * 0)) & 0xFF,     \
@@ -201,16 +208,33 @@ Editor editor = {0};
         ((color) >> (8 * 2)) & 0xFF, \
         ((color) >> (8 * 3)) & 0xFF
 
+Vec2f Window_size(SDL_Window *window)
+{
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+    return (Vec2f){.x = (float)w, .y = (float)h};
+}
+
+Vec2f camer_project_point(SDL_Window *window, Vec2f point)
+{
+    return vec2f_add(
+        vec2f_sub(point, camer_pos), 
+        vec2f_mul(Window_size(window), vec2fs(0.5f))
+        );
+}
+
 /**
  * render_cursor - 渲染文本光标
  * @renderer: SDL渲染器
  * @color: 光标颜色(RGBA格式)
  * 在当前光标位置渲染一个矩形光标
  */
-void render_cursor(SDL_Renderer *renderer, const Font *font)
+void render_cursor(SDL_Renderer *renderer, SDL_Window *window, const Font *font)
 {
-    const Vec2f pos = {.x = editor.cursor_col * FONT_CHAR_WIDTH * FONT_SCALE,
-                       .y = editor.cursor_row * FONT_CHAR_HEIGHT * FONT_SCALE};
+    const Vec2f pos = camer_project_point(window, (Vec2f){
+        .x = editor.cursor_col * FONT_CHAR_WIDTH * FONT_SCALE,
+        .y = editor.cursor_row * FONT_CHAR_HEIGHT * FONT_SCALE
+    });
 
     SDL_FRect rect = {
         .x = pos.x,
@@ -233,6 +257,8 @@ void useage(FILE *stream)
 {
     fprintf(stream, "Usage: text-editor [file]\n");
 }
+
+
 /**
  * main - 主程序入口
  * 初始化SDL和文本编辑器，处理事件循环，管理文本输入和光标移动
@@ -241,12 +267,15 @@ void useage(FILE *stream)
 int main(int argc, char *argv[])
 {
     const char *filePath = NULL;
-    if (argc > 1){
+    if (argc > 1)
+    {
         filePath = argv[1];
     }
-    if(filePath){
+    if (filePath)
+    {
         FILE *file = fopen(filePath, "r");
-        if (file) {
+        if (file)
+        {
             editor_load_from_file(&editor, file);
         }
         fclose(file);
@@ -255,7 +284,7 @@ int main(int argc, char *argv[])
     scc(SDL_Init(SDL_INIT_VIDEO));
 
     SDL_Window *window =
-        scp(SDL_CreateWindow("Text Editor", 800, 600, SDL_WINDOW_RESIZABLE));
+        scp(SDL_CreateWindow("Text Editor", SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE));
 
     SDL_Renderer *renderer =
         scp(SDL_CreateRenderer(window, NULL));
@@ -267,6 +296,7 @@ int main(int argc, char *argv[])
     bool quit = false;
     while (!quit)
     {
+        const Uint32 start = SDL_GetTicks(); // 更新SDL内部计时器，确保事件时间戳正确
         SDL_Event event = {0};
         while (SDL_PollEvent(&event))
         {
@@ -274,7 +304,7 @@ int main(int argc, char *argv[])
             {
             case SDL_EVENT_QUIT:
                 quit = true;
-            break;
+                break;
             case SDL_EVENT_KEY_DOWN:
             {
                 switch (event.key.key)
@@ -284,11 +314,12 @@ int main(int argc, char *argv[])
                     break;
                 case SDLK_RETURN:
                     editor_insert_new_line(&editor);
+                    break;
                 case SDLK_DELETE:
                     editor_delete(&editor);
                     break;
                 case SDLK_UP:
-                    if(editor.cursor_row > 0)
+                    if (editor.cursor_row > 0)
                         editor.cursor_row -= 1;
                     break;
                 case SDLK_DOWN:
@@ -301,16 +332,28 @@ int main(int argc, char *argv[])
                 case SDLK_RIGHT:
                     editor.cursor_col += 1;
                     break;
-                }
                 case SDLK_F2:
-                    editor_save_to_file(&editor, "output.txt");
+                    if (filePath)
+                        editor_save_to_file(&editor, filePath);
+                    break;
+                }
+                break;
             }
             break;
-
             case SDL_EVENT_TEXT_INPUT:
                 editor_insert_text_before_cursor(&editor, event.text.text);
                 break;
             }
+        }
+
+        {
+            const Vec2f cursor_pos = {
+                .x = editor.cursor_col * FONT_CHAR_WIDTH * FONT_SCALE,
+                .y = editor.cursor_row * FONT_CHAR_HEIGHT * FONT_SCALE};
+
+            camer_vel = vec2f_mul(vec2f_sub(cursor_pos, camer_pos), vec2fs(2.0f));
+            camer_pos = vec2f_add(camer_pos, vec2f_mul(camer_vel, vec2fs(DELTA_TIME)));
+
         }
 
         scc(SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0));
@@ -319,12 +362,21 @@ int main(int argc, char *argv[])
         for (size_t row = 0; row < editor.size; ++row)
         {
             const Line *line = editor.lines + row;
-            render_text_sized(renderer, &font, line->chars, line->size, (Vec2f){0.0f, row * FONT_CHAR_HEIGHT * FONT_SCALE}, 0xFFFFFFFF, FONT_SCALE);
+            const Vec2f line_pos = camer_project_point(window, vec2f(0.0f, row * FONT_CHAR_HEIGHT * FONT_SCALE)); 
+
+            render_text_sized(renderer, &font, line->chars, line->size, line_pos, 0xFFFFFFFF, FONT_SCALE);
         }
 
-        render_cursor(renderer, &font);
+        render_cursor(renderer, window, &font);
 
         SDL_RenderPresent(renderer);
+
+        const Uint32 duration = (SDL_GetTicks() - start); // 更新SDL内部计时器，确保事件时间戳正确
+        const Uint32 frame_time = 1000 / FPS;
+        if (duration < frame_time)
+        {
+            SDL_Delay(frame_time - duration);
+        }
     }
 
     SDL_Quit();
