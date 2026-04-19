@@ -6,13 +6,14 @@
 #include "SDL3/SDL.h"
 #include "SDL3/SDL_render.h"
 #include "SDL3_ttf/SDL_ttf.h"
+#include "GL/glew.h"
 
 #include "./la.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "./stb_image.h"
-
 #include "./editor.h"
+#include "./sdl_extra.h"
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
@@ -27,11 +28,6 @@
 #define FONT_CHAR_HEIGHT (FONT_HEIGHT / FONT_ROWS)
 #define FONT_SCALE 5
 
-/**
- * scc - SDL Call Check
- * @ok: SDL函数返回的布尔值
- * 检查SDL函数调用是否成功，失败时输出错误信息并退出程序
- */
 void scc(int code)
 {
     if (code < 0)
@@ -41,12 +37,6 @@ void scc(int code)
     }
 }
 
-/**
- * scp - SDL Pointer Check
- * @ptr: 指向内存的指针
- * 检查指针是否为NULL，为NULL时输出错误信息并退出程序
- * Return: 验证后的指针
- */
 void *scp(void *ptr)
 {
     if (ptr == NULL)
@@ -57,12 +47,6 @@ void *scp(void *ptr)
     return ptr;
 }
 
-/**
- * surface_from_file - 从图像文件加载表面
- * @file_path: 图像文件路径
- * 使用stb_image库加载PNG/JPG文件，创建SDL_Surface对象
- * Return: 加载后的SDL_Surface指针
- */
 SDL_Surface *surface_from_file(const char *file_path)
 {
     int width, height, channels;
@@ -80,24 +64,12 @@ SDL_Surface *surface_from_file(const char *file_path)
 #define ASCII_DISPLAY_LOW 32
 #define ASCII_DISPLAY_HIGH 126
 
-/**
- * Font - 字体结构体
- * @spritesheet: 字体纹理
- * @glyph_table: 字形位置表（存储每个字符在纹理中的位置和大小）
- */
 typedef struct
 {
     SDL_Texture *spritesheet;
     SDL_FRect glyph_table[ASCII_DISPLAY_HIGH - ASCII_DISPLAY_LOW + 1];
 } Font;
 
-/**
- * font_load_from_file - 从图像文件加载字体
- * @renderer: SDL渲染器
- * @file_path: 字体纹理图像路径
- * 将字体图像加载为纹理，并为每个ASCII字符计算其在纹理中的位置
- * Return: 初始化后的Font结构体
- */
 Font font_load_from_file(SDL_Renderer *renderer, const char *file_path)
 {
     Font font = {0};
@@ -123,15 +95,6 @@ Font font_load_from_file(SDL_Renderer *renderer, const char *file_path)
     return font;
 }
 
-/**
- * render_char - 渲染单个字符
- * @renderer: SDL渲染器
- * @font: 字体对象指针
- * @c: 要渲染的字符
- * @pos: 字符在屏幕上的位置
- * @scale: 放大倍数
- * 在指定位置和缩放比例下渲染单个字符
- */
 void render_char(SDL_Renderer *renderer, const Font *font, char c, Vec2f pos, float scale)
 {
     const SDL_FRect dst_rect = {
@@ -151,17 +114,6 @@ void set_texture_color(SDL_Texture *texture, Uint32 color)
     scc(SDL_SetTextureAlphaMod(texture, ((color >> 24) & 0xFF)));
 }
 
-/**
- * render_text_sized - 渲染指定大小的文本字符串
- * @renderer: SDL渲染器
- * @font: 字体对象指针
- * @text: 要渲染的文本指针
- * @text_size: 文本长度
- * @pos: 文本在屏幕上的起始位置
- * @color: 文本颜色(RGBA格式)
- * @scale: 放大倍数
- * 在指定位置使用指定颜色和缩放比例渲染文本字符串
- */
 void render_text_sized(SDL_Renderer *renderer, Font *font, const char *text, size_t text_size, Vec2f pos, Uint32 color, float scale)
 {
     set_texture_color(font->spritesheet, color);
@@ -178,16 +130,6 @@ void render_text_sized(SDL_Renderer *renderer, Font *font, const char *text, siz
     scc(SDL_SetTextureAlphaMod(font->spritesheet, 255));
 }
 
-/**
- * render_text - 渲染文本字符串（包装函数）
- * @renderer: SDL渲染器
- * @font: 字体对象指针
- * @text: 要渲染的文本指针（以NULL结尾）
- * @pos: 文本在屏幕上的起始位置
- * @color: 文本颜色(RGBA格式)
- * @scale: 放大倍数
- * 自动计算文本长度，然后调用render_text_sized进行渲染
- */
 void render_text(SDL_Renderer *renderer, Font *font, const char *text, Vec2f pos, Uint32 color, float scale)
 {
     render_text_sized(renderer, font, text, strlen(text), pos, color, scale);
@@ -223,12 +165,6 @@ Vec2f camer_project_point(SDL_Window *window, Vec2f point)
         );
 }
 
-/**
- * render_cursor - 渲染文本光标
- * @renderer: SDL渲染器
- * @color: 光标颜色(RGBA格式)
- * 在当前光标位置渲染一个矩形光标
- */
 void render_cursor(SDL_Renderer *renderer, SDL_Window *window, const Font *font)
 {
     const Vec2f pos = camer_project_point(window, (Vec2f){
@@ -258,12 +194,93 @@ void useage(FILE *stream)
     fprintf(stream, "Usage: text-editor [file]\n");
 }
 
+#define GL_DEFINE
+#ifdef GL_DEFINE
 
-/**
- * main - 主程序入口
- * 初始化SDL和文本编辑器，处理事件循环，管理文本输入和光标移动
- * Return: 程序退出码
- */
+void MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userParam)
+{
+    fprintf(stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+            (type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""),
+            type, severity, message);
+}
+int main(int argc, char *argv[])
+{
+    SDL_Window *window =
+        scp(SDL_CreateWindow("Text Editor", SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL));
+    
+    {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+
+        int major, minor;
+        SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major);
+        SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minor);
+        printf("OpenGL context version: %d.%d\n", major, minor);
+    }
+
+    scp(SDL_GL_CreateContext(window));
+
+    if(glewInit() != GLEW_OK) {
+        fprintf(stderr, "Failed to initialize GLEW\n");
+        exit(EXIT_FAILURE);
+    }
+
+    glEnable(GL_DEBUG_OUTPUT);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    if(GLEW_ARB_debug_output) {
+        glDebugMessageCallback(MessageCallback, NULL);
+    } else {
+        fprintf(stderr, "ARB_debug_output not available\n");
+    }
+
+    GLuint vert_shader = 0, frag_shader = 0, shader_program = 0;
+    if(!compile_shader_file("./shaders/font.vert", GL_VERTEX_SHADER, &vert_shader)) {
+        fprintf(stderr, "Failed to compile vertex shader\n");
+        exit(EXIT_FAILURE);
+    }
+    if(!compile_shader_file("./shaders/font.frag", GL_FRAGMENT_SHADER, &frag_shader)) {
+        fprintf(stderr, "Failed to compile fragment shader\n");
+        exit(EXIT_FAILURE);
+    }
+    if(!link_program(vert_shader, frag_shader, &shader_program)) {
+        fprintf(stderr, "Failed to link shader program\n");
+        exit(EXIT_FAILURE);
+    }
+
+    glUseProgram(shader_program);
+
+    GLuint vao = 0;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    bool quit = false;
+    while (!quit)
+    {
+        SDL_Event event = {0};
+        while (SDL_PollEvent(&event))
+        {
+            switch (event.type)
+            {
+            case SDL_EVENT_QUIT:
+                quit = true;
+                break;
+            }
+        }
+
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        SDL_GL_SwapWindow(window);
+    }
+
+    return 0;
+}
+
+#else
 int main(int argc, char *argv[])
 {
     const char *filePath = NULL;
@@ -382,3 +399,4 @@ int main(int argc, char *argv[])
     SDL_Quit();
     return 0;
 }
+#endif // GL_DEFINE

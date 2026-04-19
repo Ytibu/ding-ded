@@ -1,14 +1,20 @@
-#include "file.h"
+#include "./file.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-char *slup_file(const char *filePath, size_t *out_size)
+char *slurp_file(const char *filePath)
 {
+#define SLURP_FILE_PANIC \
+    do { \
+        fprintf(stderr, "Error: failed to read file '%s'\n", filePath); \
+        exit(EXIT_FAILURE); \
+    } while (0)
+
     FILE *file = fopen(filePath, "rb");
     if (!file) {
-        return NULL;
+        SLURP_FILE_PANIC;
     }
 
     fseek(file, 0, SEEK_END);
@@ -18,16 +24,13 @@ char *slup_file(const char *filePath, size_t *out_size)
     char *buffer = malloc(size + 1);
     if (!buffer) {
         fclose(file);
-        return NULL;
+        SLURP_FILE_PANIC;
     }
 
     fread(buffer, 1, size, file);
     buffer[size] = '\0';
 
     fclose(file);
-
-    if (out_size) {
-        *out_size = size;
-    }
     return buffer;
+#undef SLURP_FILE_PANIC
 }
