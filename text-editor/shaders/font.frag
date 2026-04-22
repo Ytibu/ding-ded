@@ -15,9 +15,21 @@
 uniform sampler2D font;
 uniform float time;
 
+flat in int glyph_ch;
 in vec2 uv;
-in float glyph_ch;
-in vec4 glyph_color;
+in vec4 glyph_fg_color;
+in vec4 glyph_bg_color;
+
+float map01(float x)
+{
+    return (x+1) / 2.0;
+}
+
+vec3 hsl2rgb(vec3 hsl)
+{
+    vec3 rgb = clamp( abs(mod(hsl.x * 6.0 + vec3(0.0,4.0,2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0 );
+    return hsl.z + hsl.y * (rgb - 0.5) * (1.0 - abs(2.0 * hsl.z - 1.0));
+}
 
 void main()
 {
@@ -33,7 +45,10 @@ void main()
 
     vec2 pos = vec2(x, y + FONT_CHAR_HEIGHT_UV);
     vec2 size = vec2(FONT_CHAR_WIDTH_UV, -FONT_CHAR_HEIGHT_UV);
-    vec2 uv = pos + uv * size;
+    vec2 t = pos + uv * size;
+    vec4 tc = texture(font, t);
 
-    gl_FragColor = texture(font, uv) * glyph_color;
+
+    vec4 rainbow = vec4(hsl2rgb(vec3(map01(time * 0.1), 1.0, 0.5)), 1.0);
+    gl_FragColor = glyph_bg_color * (1.0 - tc.x) + tc.x * glyph_fg_color * rainbow;
 }
