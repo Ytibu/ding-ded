@@ -1,6 +1,6 @@
 .vscode/
 
-te.exe
+*.exe
 *.o
 *.out
 *.txt
