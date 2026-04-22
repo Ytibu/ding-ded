@@ -11,7 +11,7 @@ LDFLAGS := -L$(SDL_ROOT)/lib -L$(GL_ROOT)/lib
 LIBS := -lSDL3 -lm -lglew32 -lopengl32
 
 TARGET := te
-SRCS := main.c la.c editor.c font.c sdl_extra.c file.c
+SRCS := src/main.c src/la.c src/editor.c src/font.c src/sdl_extra.c src/file.c src/head.c
 
 $(TARGET): $(SRCS)
 	$(CC) $(CFLAGS) $(SRCS) -o $(TARGET) $(LDFLAGS) $(LIBS) 
