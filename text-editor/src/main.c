@@ -2,26 +2,30 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 
 #include "SDL3/SDL.h"
 #include "SDL3/SDL_render.h"
-#include "SDL3_ttf/SDL_ttf.h"
 #include "GL/glew.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "./stb_image.h"
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 #include "./la.h"
 #include "./font.h"
 #include "./head.h"
 #include "./editor.h"
 #include "./sdl_extra.h"
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "./stb_image.h"
+#include "./tileGlyph.h"
+#include "./freeGlyph.h"
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
 #define FPS 60
 #define DELTA_TIME (1.0f / FPS)
-
 
 void render_text(SDL_Renderer *renderer, Font *font, const char *text, Vec2f pos, Uint32 color, float scale)
 {
@@ -32,10 +36,6 @@ void render_text(SDL_Renderer *renderer, Font *font, const char *text, Vec2f pos
 
 char buffer[BUFFER_CAPACITY];
 size_t buffer_size = 0;
-
-Editor editor = {0};
-Vec2f camer_pos = {0.0f, 0.0f};
-Vec2f camer_vel = {0.0f, 0.0f};
 
 #define UNHEX(color)                 \
     ((color) >> (8 * 0)) & 0xFF,     \
@@ -50,18 +50,16 @@ Vec2f Window_size(SDL_Window *window)
     return (Vec2f){.x = (float)w, .y = (float)h};
 }
 
-Vec2f camer_project_point(SDL_Window *window, Vec2f point)
+Vec2f camer_project_point(SDL_Window *window, Vec2f point, Vec2f camer_pos)
 {
     return vec2f_add(
         vec2f_sub(point, camer_pos),
         vec2f_mul(Window_size(window), vec2fs(0.5f)));
 }
 
-void render_cursor(SDL_Renderer *renderer, SDL_Window *window, const Font *font)
+void render_cursor(SDL_Renderer *renderer, SDL_Window *window, const Font *font, const Editor *editor, Vec2f camer_pos)
 {
-    const Vec2f pos = camer_project_point(window, (Vec2f){
-                                                      .x = editor.cursor_col * FONT_CHAR_WIDTH * FONT_SCALE,
-                                                      .y = editor.cursor_row * FONT_CHAR_HEIGHT * FONT_SCALE});
+    const Vec2f pos = camer_project_point(window, (Vec2f){.x = editor->cursor_col * FONT_CHAR_WIDTH * FONT_SCALE, .y = editor->cursor_row * FONT_CHAR_HEIGHT * FONT_SCALE}, camer_pos);
 
     SDL_FRect rect = {
         .x = pos.x,
@@ -72,7 +70,7 @@ void render_cursor(SDL_Renderer *renderer, SDL_Window *window, const Font *font)
     scc(SDL_SetRenderDrawColor(renderer, UNHEX(0xFFFFFFFF)));
     scc(SDL_RenderFillRect(renderer, &rect));
 
-    const char *c = editor_char_under_cursor(&editor);
+    const char *c = editor_char_under_cursor(editor);
     if (c)
     {
         set_texture_color(font->spritesheet, 0xFF000000);
@@ -81,7 +79,15 @@ void render_cursor(SDL_Renderer *renderer, SDL_Window *window, const Font *font)
 }
 
 #define GL_DEFINE
+
+Editor editor = {0};
+Vec2f camer_pos = {0.0f, 0.0f};
+Vec2f camer_vel = {0.0f, 0.0f};
+
 #ifdef GL_DEFINE
+#define FREE_GLYPH_FONT_SIZE 64
+// static Tile_Glyph_Buffer tgb = {0};
+static Free_Glyph_Buffer fgb = {0};
 
 void MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userParam)
 {
@@ -90,88 +96,104 @@ void MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLs
             type, severity, message);
 }
 
-typedef struct{
-    Vec2i tile;
-    int ch;
-    Vec4f fg_color;
-    Vec4f bg_color;
-} Glyph;
-
-typedef enum{
-    GLYPH_ATTR_TILE = 0,
-    GLYPH_ATTR_CHAR = 1,
-    GLYPH_ATTR_FG_COLOR = 2,
-    GLYPH_ATTR_BG_COLOR = 3,
-    COUNT_GLYPH_ATTR,
-} Glyph_Attr;
-
-typedef struct{
-    size_t offset;
-    size_t comps;
-    GLenum type;
-} Glyph_Attr_Def;
-
-const static Glyph_Attr_Def glyph_attr_defs[COUNT_GLYPH_ATTR] = {
-    [GLYPH_ATTR_TILE] = {offsetof(Glyph, tile), 2, GL_INT},
-    [GLYPH_ATTR_CHAR] = {offsetof(Glyph, ch), 1, GL_INT},
-    [GLYPH_ATTR_FG_COLOR] = {offsetof(Glyph, fg_color), 4, GL_FLOAT},
-    [GLYPH_ATTR_BG_COLOR] = {offsetof(Glyph, bg_color), 4, GL_FLOAT},
-};
-
-static_assert(COUNT_GLYPH_ATTR == 4, "glyph_attr_defs size must match Glyph_Attr count");
-
-#define GLYPH_BUFFER_CAPACITY (1024 * 640)
-Glyph glyph_buffer[GLYPH_BUFFER_CAPACITY];
-size_t glyph_buffer_count = 0;
-
-void glyph_buffer_clear(void)
+void gl_render_cursor(Tile_Glyph_Buffer *tgb, const Editor *editor)
 {
-    glyph_buffer_count = 0;
+    const char *c = editor_char_under_cursor(editor);
+    Vec2i tile = vec2i(editor->cursor_col, -(int)editor->cursor_row);
+    tile_glyph_render_line_sized(tgb, c ? c : " ", 1, tile, vec4fs(0.0f), vec4fs(1.0f));
 }
 
-void glyph_buffer_push(Glyph glyph)
+void render_editor_into_tgb(SDL_Window *window, Tile_Glyph_Buffer *tgb, const Editor *editor)
 {
-    assert(glyph_buffer_count < GLYPH_BUFFER_CAPACITY);
-    glyph_buffer[glyph_buffer_count++] = glyph;
-}
-
-void glyph_buffer_sync(void)
-{
-    glBufferSubData(GL_ARRAY_BUFFER, 0, glyph_buffer_count * sizeof(Glyph), glyph_buffer);
-}
-
-void gl_render_text_sized(const char* text, size_t text_size, Vec2i tile, Vec4f fg_color, Vec4f bg_color)
-{
-    for(size_t i = 0; i < text_size; ++i){
-        const Glyph glyph = {
-            .tile = vec2i_add(tile, vec2i(i, 0)),
-            .ch = text[i],
-            .fg_color = fg_color,
-            .bg_color = bg_color,
-        };
-        glyph_buffer_push(glyph);
+    // 视口和分辨率 uniform 更新
+    {
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+        glViewport(0, 0, w, h);
+        glUniform2f(tgb->resolution_uniform, (float)w, (float)h);
     }
+
+    tile_glyph_buffer_clear(tgb);
+    for (size_t row = 0; row < editor->size; ++row)
+    {
+        const Line *line = editor->lines + row;
+        tile_glyph_render_line_sized(tgb, line->chars, line->size, vec2i(0, -((int)row)), vec4f(1.0f, 1.0f, 1.0f, 1.0f), vec4fs(0.0f));
+    }
+    tile_glyph_buffer_sync(tgb);
+
+    glUniform1f(tgb->time_uniform, (float)SDL_GetTicks() / 1000.0f);
+    glUniform2f(tgb->camera_uniform, camer_pos.x, camer_pos.y);
+
+    tile_glyph_buffer_draw(tgb);
+
+    tile_glyph_buffer_clear(tgb);
+    gl_render_cursor(tgb, editor);
+    tile_glyph_buffer_sync(tgb);
+
+    tile_glyph_buffer_draw(tgb);
 }
 
-void gl_render_text(const char* text, Vec2i tile, Vec4f fg_color, Vec4f bg_color)
+void render_editor_into_fgb(SDL_Window *window, Free_Glyph_Buffer *fgb, const Editor *editor)
 {
-    gl_render_text_sized(text, strlen(text), tile, fg_color, bg_color);
-}
+    // 视口和分辨率 uniform 更新
+    {
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+        glViewport(0, 0, w, h);
+        glUniform2f(fgb->resolution_uniform, (float)w, (float)h);
+    }
 
-void gl_render_cursor()
-{
-    const char *c = editor_char_under_cursor(&editor);
-    Vec2i tile =  vec2i(editor.cursor_col, -(int)editor.cursor_row);
-    gl_render_text_sized(c ? c : " ", 1, tile, vec4fs(0.0f), vec4fs(1.0f));
+    glUniform1f(fgb->time_uniform, (float)SDL_GetTicks() / 1000.0f);
+    glUniform2f(fgb->camera_uniform, camer_pos.x, camer_pos.y);
+
+    free_glyph_buffer_clear(fgb);
+    for (size_t row = 0; row < editor->size; ++row)
+    {
+        const Line *line = editor->lines + row;
+        free_glyph_render_line_sized(fgb, line->chars, line->size, vec2f(0, -(float)row * FREE_GLYPH_FONT_SIZE), vec4fs(1.0f), vec4fs(0.0f));
+    }
+    //free_glyph_buffer_render_line(fgb, "Hello, World!", vec2fs(1.0f), vec4fs(1.0f), vec4fs(0.0f));
+    free_glyph_buffer_sync(fgb);
+    free_glyph_buffer_draw(fgb);
 }
 
 int main(int argc, char *argv[])
 {
+    FT_Library library = {0};
+
+    FT_Error error = FT_Init_FreeType(&library);
+    if (error)
+    {
+        fprintf(stderr, "Failed to initialize FreeType library\n");
+        exit(EXIT_FAILURE);
+    }
+
+    const char *font_path = "./VictorMono-Regular.ttf";
+
+    FT_Face face;
+    error = FT_New_Face(library, font_path, 0, &face);
+    if (error == FT_Err_Unknown_File_Format)
+    {
+        fprintf(stderr, "Unsupported font format: %s\n", font_path);
+        exit(EXIT_FAILURE);
+    }
+    else if (error)
+    {
+        fprintf(stderr, "Failed to load font: %s\n", font_path);
+        exit(EXIT_FAILURE);
+    }
+
+    FT_UInt font_size = FREE_GLYPH_FONT_SIZE;
+    error = FT_Set_Pixel_Sizes(face, 0, font_size);
+    if (error)
+    {
+        fprintf(stderr, "Failed to set font pixel size: %u\n", font_size);
+        exit(EXIT_FAILURE);
+    }
+
     const char *filePath = NULL;
     if (argc > 1)
-    {
         filePath = argv[1];
-    }
     if (filePath)
     {
         FILE *file = fopen(filePath, "r");
@@ -183,138 +205,56 @@ int main(int argc, char *argv[])
     }
 
     scc(SDL_Init(SDL_INIT_VIDEO));
-    // 1. 创建 SDL 窗口，启用 OpenGL
-    SDL_Window *window =
-        scp(SDL_CreateWindow("Text Editor", SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL));
-
-    // 启用文本输入，确保 SDL_EVENT_TEXT_INPUT 能正常响应
+    SDL_Window *window = scp(SDL_CreateWindow("Text Editor", SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL));
     SDL_StartTextInput(window);
 
-    // 2. 设置并检查 OpenGL 上下文版本（3.3 Core Profile）
+    // OpenGL context
     {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-
         int major, minor;
         SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major);
         SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minor);
         printf("OpenGL context version: %d.%d\n", major, minor);
     }
 
-    // 3. 创建 OpenGL 上下文
     scp(SDL_GL_CreateContext(window));
 
-    // 4. 初始化 GLEW（OpenGL 扩展加载）
     if (glewInit() != GLEW_OK)
     {
         fprintf(stderr, "Failed to initialize GLEW\n");
         exit(EXIT_FAILURE);
     }
 
-    // 5. 启用 OpenGL 调试输出和混合模式
+    if (!GLEW_ARB_draw_instanced) {
+        fprintf(stderr, "ARB_draw_instanced is not supported; game may not work properly!!\n");
+        exit(1);
+    }
+
+    if (!GLEW_ARB_instanced_arrays) {
+        fprintf(stderr, "ARB_instanced_arrays is not supported; game may not work properly!!\n");
+        exit(1);
+    }
+
     glEnable(GL_DEBUG_OUTPUT);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    if (GLEW_ARB_debug_output){
+    if (GLEW_ARB_debug_output)
+    {
         glDebugMessageCallback(MessageCallback, NULL);
-    }else{
+    }
+    else
+    {
         fprintf(stderr, "GLEW_ARB_debug_output not available\n");
     }
+    // tile_glyph_buffer_init(&tgb, "./charmap-oldschool_white.png", "./shaders/font.vert", "./shaders/font.frag");
+    free_glyph_buffer_init(&fgb, face, "./shaders/free_glyph.vert", "./shaders/free_glyph.frag");
 
-    // 6. 编译着色器并链接着色器程序，获取 uniform 位置
-    GLint resolution_uniform;
-    GLint time_uniform;
-    GLint scale_uniform;
-    GLint camera_uniform;
-    {
-        GLuint vert_shader = 0, frag_shader = 0, shader_program = 0;
-        // 编译顶点着色器
-        if (!compile_shader_file("./shaders/font.vert", GL_VERTEX_SHADER, &vert_shader))
-        {
-            fprintf(stderr, "Failed to compile vertex shader\n");
-            exit(EXIT_FAILURE);
-        }
-        // 编译片元着色器
-        if (!compile_shader_file("./shaders/font.frag", GL_FRAGMENT_SHADER, &frag_shader))
-        {
-            fprintf(stderr, "Failed to compile fragment shader\n");
-            exit(EXIT_FAILURE);
-        }
-        // 链接着色器程序
-        if (!link_program(vert_shader, frag_shader, &shader_program))
-        {
-            fprintf(stderr, "Failed to link shader program\n");
-            exit(EXIT_FAILURE);
-        }
-
-        glUseProgram(shader_program);
-        glGetUniformLocation(shader_program, "font");
-
-        // 获取 uniform 变量位置
-        time_uniform = glGetUniformLocation(shader_program, "time");
-        resolution_uniform = glGetUniformLocation(shader_program, "resolution");
-        scale_uniform = glGetUniformLocation(shader_program, "scale");
-        camera_uniform = glGetUniformLocation(shader_program, "camera");
-        // 设置缩放 uniform
-        glUniform2f(scale_uniform, FONT_SCALE, FONT_SCALE);
-    }
-
-    // 7. 加载字体纹理到 OpenGL
-    {
-        const char *file_path = "./charmap-oldschool_white.png";
-        int width, height, channels;
-        unsigned char *data = stbi_load(file_path, &width, &height, &channels, STBI_rgb_alpha);
-        if (data == NULL){
-            fprintf(stderr, "ERROR: could not load file %s: %s\n", file_path, stbi_failure_reason());
-            exit(EXIT_FAILURE);
-        }
-
-        glActiveTexture(GL_TEXTURE0);
-
-        GLuint font_texture = 0;
-        glGenTextures(1, &font_texture);
-        glBindTexture(GL_TEXTURE_2D, font_texture);
-
-        // 设置纹理参数
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-        // 上传纹理数据
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    }
-
-    // 8. 设置 VAO/VBO 及顶点属性指针
-    {
-        GLuint vao = 0;
-        glGenVertexArrays(1, &vao);
-        glBindVertexArray(vao);
-
-        GLuint vbo = 0;
-        glGenBuffers(1, &vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(Glyph) * GLYPH_BUFFER_CAPACITY, glyph_buffer, GL_DYNAMIC_DRAW);
-        for(Glyph_Attr attr = 0; attr < COUNT_GLYPH_ATTR; ++attr){
-            const Glyph_Attr_Def def = glyph_attr_defs[attr];
-            glEnableVertexAttribArray(attr);
-            // 根据属性定义选择正确的顶点属性指针类型
-            if (def.type == GL_INT) {
-                glVertexAttribIPointer(attr, def.comps, def.type, sizeof(Glyph), (void*)def.offset);
-            } else {
-                glVertexAttribPointer(attr, def.comps, def.type, GL_FALSE, sizeof(Glyph), (void*)def.offset);
-            }
-            glVertexAttribDivisor(attr, 1);
-        }
-    }
-
-    // 10. 主循环：事件处理与渲染
     bool quit = false;
     while (!quit)
     {
-        // 事件处理
-        const Uint32 start = SDL_GetTicks(); // 更新SDL内部计时器，确保事件时间戳正确
+        const Uint32 start = SDL_GetTicks();
         SDL_Event event = {0};
         while (SDL_PollEvent(&event))
         {
@@ -324,7 +264,6 @@ int main(int argc, char *argv[])
                 quit = true;
                 break;
             case SDL_EVENT_KEY_DOWN:
-            {
                 switch (event.key.key)
                 {
                 case SDLK_BACKSPACE:
@@ -355,74 +294,65 @@ int main(int argc, char *argv[])
                         editor_save_to_file(&editor, filePath);
                     break;
                 }
-            }
-            break;
+                break;
             case SDL_EVENT_TEXT_INPUT:
                 editor_insert_text_before_cursor(&editor, event.text.text);
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
-                if(event.button.button == SDL_BUTTON_LEFT){
+                if (event.button.button == SDL_BUTTON_LEFT)
+                {
                     const Vec2f mouse_pos = {.x = (float)event.button.x, .y = (float)event.button.y};
                     const Vec2f world_pos = vec2f_sub(
                         vec2f_add(mouse_pos, camer_pos),
-                        vec2f_mul(Window_size(window), vec2fs(0.5f))
-                    );
+                        vec2f_mul(Window_size(window), vec2fs(0.5f)));
                     const size_t col = (size_t)(world_pos.x / (FONT_CHAR_WIDTH * FONT_SCALE));
                     const size_t row = (size_t)(world_pos.y / (FONT_CHAR_HEIGHT * FONT_SCALE));
                     editor.cursor_col = col;
                     editor.cursor_row = row;
                 }
-            break;
+                break;
             }
         }
 
+        // 摄像机跟随光标
         {
             const Vec2f cursor_pos = {
                 .x = editor.cursor_col * FONT_CHAR_WIDTH * FONT_SCALE,
                 .y = -(int)editor.cursor_row * FONT_CHAR_HEIGHT * FONT_SCALE};
-
             camer_vel = vec2f_mul(vec2f_sub(cursor_pos, camer_pos), vec2fs(2.0f));
             camer_pos = vec2f_add(camer_pos, vec2f_mul(camer_vel, vec2fs(DELTA_TIME)));
         }
 
-        // 视口和分辨率 uniform 更新
         {
-            int  w, h;
+            int w, h;
             SDL_GetWindowSize(window, &w, &h);
+            // TODO(#19): update the viewport and the resolution only on actual window change
             glViewport(0, 0, w, h);
-            glUniform2f(resolution_uniform, (float)w, (float) h);
         }
 
-        glyph_buffer_clear();
-        for (size_t row = 0; row < editor.size; ++row)
-        {
-            const Line *line = editor.lines + row;
-            gl_render_text_sized(line->chars, line->size, vec2i(0, -((int)row)), vec4f(1.0f, 1.0f, 1.0f, 1.0f), vec4fs(0.0f));
-        }
-        glyph_buffer_sync();
-
-        // 清屏并渲染一帧
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glUniform1f(time_uniform, (float)SDL_GetTicks() / 1000.0f);
-        glUniform2f(camera_uniform, camer_pos.x, camer_pos.y);
-
-        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, (GLsizei)glyph_buffer_count);
-
-        glyph_buffer_clear();
-        gl_render_cursor();
-        glyph_buffer_sync();
-        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, (GLsizei)glyph_buffer_count);
+        // render_editor_into_tgb(window, &tgb, &editor);
+        render_editor_into_fgb(window, &fgb, &editor);
 
         SDL_GL_SwapWindow(window);
 
-        const Uint32 duration = (SDL_GetTicks() - start); // 更新SDL内部计时器，确保事件时间戳正确
+        const Uint32 duration = (SDL_GetTicks() - start);
         const Uint32 frame_time = 1000 / FPS;
         if (duration < frame_time)
         {
             SDL_Delay(frame_time - duration);
         }
+    }
+
+    if (face)
+    {
+        FT_Done_Face(face);
+    }
+    if (library)
+    {
+        FT_Done_FreeType(library);
     }
 
     return 0;

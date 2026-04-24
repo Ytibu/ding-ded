@@ -48,7 +48,7 @@ void main()
     vec2 t = pos + uv * size;
     vec4 tc = texture(font, t);
 
-
-    vec4 rainbow = vec4(hsl2rgb(vec3(map01(time * 0.1), 1.0, 0.5)), 1.0);
+    vec2 frag_uv = gl_FragCoord.xy / resolution;
+    vec4 rainbow = vec4(hsl2rgb(vec3((time + frag_uv.x + frag_uv.y), 0.5, 0.5)), 1.0);
     gl_FragColor = glyph_bg_color * (1.0 - tc.x) + tc.x * glyph_fg_color * rainbow;
 }
