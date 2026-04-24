@@ -8,7 +8,8 @@
 
 const char *shader_type_as_cstr(GLuint shader)
 {
-    switch (shader) {
+    switch (shader)
+    {
     case GL_VERTEX_SHADER:
         return "GL_VERTEX_SHADER";
     case GL_FRAGMENT_SHADER:
@@ -27,7 +28,8 @@ bool compile_shader_source(const GLchar *source, GLenum shader_type, GLuint *sha
     GLint compiled = 0;
     glGetShaderiv(*shader, GL_COMPILE_STATUS, &compiled);
 
-    if (!compiled) {
+    if (!compiled)
+    {
         GLchar message[1024];
         GLsizei message_size = 0;
         glGetShaderInfoLog(*shader, sizeof(message), &message_size, message);
@@ -42,39 +44,43 @@ bool compile_shader_source(const GLchar *source, GLenum shader_type, GLuint *sha
 bool compile_shader_file(const char *file_path, GLenum shader_type, GLuint *shader)
 {
     char *source = slurp_file(file_path);
-    if (source == NULL) {
+    if (source == NULL)
+    {
         fprintf(stderr, "ERROR: failed to read file `%s`: %s\n", file_path, strerror(errno));
         errno = 0;
         return false;
     }
     bool ok = compile_shader_source(source, shader_type, shader);
-    if (!ok) {
+    if (!ok)
+    {
         fprintf(stderr, "ERROR: failed to compile `%s` shader file\n", file_path);
     }
     free(source);
     return ok;
 }
 
-bool link_program(GLuint vert_shader, GLuint frag_shader, GLuint *program)
+bool link_program(GLuint program)
 {
-    *program = glCreateProgram();
-
-    glAttachShader(*program, vert_shader);
-    glAttachShader(*program, frag_shader);
-    glLinkProgram(*program);
+    glLinkProgram(program);
 
     GLint linked = 0;
-    glGetProgramiv(*program, GL_LINK_STATUS, &linked);
-    if (!linked) {
+    glGetProgramiv(program, GL_LINK_STATUS, &linked);
+    if (!linked)
+    {
         GLsizei message_size = 0;
         GLchar message[1024];
 
-        glGetProgramInfoLog(*program, sizeof(message), &message_size, message);
+        glGetProgramInfoLog(program, sizeof(message), &message_size, message);
         fprintf(stderr, "Program Linking: %.*s\n", message_size, message);
     }
 
-    glDeleteShader(vert_shader);
-    glDeleteShader(frag_shader);
-
     return linked == GL_TRUE;
+}
+
+void attach_shaders_to_program(GLuint *shaders, size_t shaders_count, GLuint program)
+{
+    for (size_t i = 0; i < shaders_count; ++i)
+    {
+        glAttachShader(program, shaders[i]);
+    }
 }

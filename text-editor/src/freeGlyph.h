@@ -10,6 +10,7 @@
 #include FT_FREETYPE_H
 
 #include "./la.h"
+#include "./uniforms.h"
 
 typedef struct{
     Vec2f pos;
@@ -43,7 +44,7 @@ typedef struct{
     float tx;
 } Glyph_Metric;
 
-#define FREE_GLYPH_BUFFER_CAPACITY (1024 * 640)
+#define FREE_GLYPH_BUFFER_CAPACITY (1000 * 640)
 typedef struct{
     GLuint vao;
     GLuint vbo;
@@ -54,9 +55,7 @@ typedef struct{
 
     GLuint glyphs_texture;
 
-    GLint resolution_uniform;
-    GLint time_uniform;
-    GLint camera_uniform;
+    GLint uniforms[COUNT_UNIFORM_SLOTS];
 
     size_t glyphs_count;
     Free_Glyph glyphs[FREE_GLYPH_BUFFER_CAPACITY];
@@ -64,7 +63,10 @@ typedef struct{
     Glyph_Metric metrics[128];
 } Free_Glyph_Buffer;
 
-void free_glyph_buffer_init(Free_Glyph_Buffer *fgb, FT_Face font_face, const char* vertex_shader_path, const char* fragment_shader_path);
+void free_glyph_buffer_init(Free_Glyph_Buffer *fgb,
+                            FT_Face font_face,
+                            const char* vertex_shader_path,
+                            const char* fragment_shader_path);
 void free_glyph_buffer_use(const Free_Glyph_Buffer *fgb);
 
 void free_glyph_buffer_clear(Free_Glyph_Buffer *fgb);
@@ -72,8 +74,18 @@ void free_glyph_buffer_push(Free_Glyph_Buffer *fgb, Free_Glyph glyph);
 void free_glyph_buffer_sync(Free_Glyph_Buffer *fgb);
 void free_glyph_buffer_draw(Free_Glyph_Buffer *fgb);
 
-float free_glyph_buffer_cursor_pos(const Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, size_t col);
-void free_glyph_render_line_sized(Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, Vec4f fg_color, Vec4f bg_color);
-void free_glyph_render_line(Free_Glyph_Buffer *fgb, const char* text, Vec2f pos, Vec4f fg_color, Vec4f bg_color);
+float free_glyph_buffer_cursor_pos(const Free_Glyph_Buffer *fgb,
+                                    const char *text,
+                                    size_t text_size,
+                                    Vec2f pos,
+                                    size_t col);
+void free_glyph_render_line(Free_Glyph_Buffer *fgb,
+     const char* text, Vec2f pos, Vec4f fg_color, Vec4f bg_color);
+void free_glyph_buffer_render_line_sized(Free_Glyph_Buffer *fgb,
+                                        const char *text,
+                                        size_t text_size,
+                                        Vec2f *pos,
+                                        Vec4f fg_color,
+                                        Vec4f bg_color);
 
 #endif // __FREE_GLYPH_H__

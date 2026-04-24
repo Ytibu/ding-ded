@@ -56,32 +56,26 @@ void free_glyph_buffer_init(Free_Glyph_Buffer *fgb, FT_Face font_face,
     /////////////////////////////////////////////////
     /////////////////////////////////////////////////
 
-    GLuint vert_shader = 0, frag_shader = 0;
-    // 编译顶点着色器
-    if (!compile_shader_file(vertex_shader_path, GL_VERTEX_SHADER, &vert_shader))
-    {
-        fprintf(stderr, "Failed to compile vertex shader\n");
-        exit(EXIT_FAILURE);
-    }
-    // 编译片元着色器
-    if (!compile_shader_file(fragment_shader_path, GL_FRAGMENT_SHADER, &frag_shader))
-    {
-        fprintf(stderr, "Failed to compile fragment shader\n");
-        exit(EXIT_FAILURE);
-    }
-    // 链接着色器程序
-    if (!link_program(vert_shader, frag_shader, &fgb->program))
-    {
-        fprintf(stderr, "Failed to link shader program\n");
-        exit(EXIT_FAILURE);
-    }
+    GLuint shaders[3] = {0};
 
-    glUseProgram(fgb->program);
+        if (!compile_shader_file(vertex_shader_path, GL_VERTEX_SHADER, &shaders[0])) {
+            exit(1);
+        }
+        if (!compile_shader_file(fragment_shader_path, GL_FRAGMENT_SHADER, &shaders[1])) {
+            exit(1);
+        }
+        if (!compile_shader_file("./shaders/camera.vert", GL_VERTEX_SHADER, &shaders[2])) {
+            exit(1);
+        }
 
-    // 获取 uniform 变量位置
-    fgb->time_uniform = glGetUniformLocation(fgb->program, "time");
-    fgb->resolution_uniform = glGetUniformLocation(fgb->program, "resolution");
-    fgb->camera_uniform = glGetUniformLocation(fgb->program, "camera");
+        fgb->program = glCreateProgram();
+        attach_shaders_to_program(shaders, sizeof(shaders) / sizeof(shaders[0]), fgb->program);
+        if (!link_program(fgb->program)) {
+            exit(1);
+        }
+
+        glUseProgram(fgb->program);
+        get_uniform_location(fgb->program, fgb->uniforms);
     
     ////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////
@@ -129,7 +123,7 @@ void free_glyph_buffer_init(Free_Glyph_Buffer *fgb, FT_Face font_face,
             fgb->metrics[i].bh = font_face->glyph->bitmap.rows;
             fgb->metrics[i].bl = font_face->glyph->bitmap_left;
             fgb->metrics[i].bt = font_face->glyph->bitmap_top;
-            fgb->metrics[i].tx = (float)x / fgb->atlas_width;
+            fgb->metrics[i].tx = (float)x / (float)fgb->atlas_width;
             
 
             glTexSubImage2D(GL_TEXTURE_2D, 0, x, 0, bitmap->width, bitmap->rows, GL_RED, GL_UNSIGNED_BYTE, bitmap->buffer);
@@ -180,17 +174,17 @@ float free_glyph_buffer_cursor_pos(const Free_Glyph_Buffer *fgb, const char *tex
     return pos.x;
 }
 
-void free_glyph_render_line_sized(Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, Vec4f fg_color, Vec4f bg_color)
+void free_glyph_buffer_render_line_sized(Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f *pos, Vec4f fg_color, Vec4f bg_color)
 {
     for(size_t i = 0; i < text_size; ++i){
         Glyph_Metric metric = fgb->metrics[(int)text[i]];
-        float x2 = pos.x + metric.bl;
-        float y2 = -pos.y - metric.bt;
+        float x2 = pos->x + metric.bl;
+        float y2 = -pos->y - metric.bt;
         float w = metric.bw;
         float h = metric.bh;
 
-        pos.x += metric.ax;
-        pos.y += metric.ay;
+        pos->x += metric.ax;
+        pos->y += metric.ay;
 
         Free_Glyph glyph = {
             .pos = vec2f(x2, -y2),
@@ -206,5 +200,5 @@ void free_glyph_render_line_sized(Free_Glyph_Buffer *fgb, const char *text, size
 
 void free_glyph_render_line(Free_Glyph_Buffer *fgb, const char* text, Vec2f pos, Vec4f fg_color, Vec4f bg_color)
 {
-    free_glyph_render_line_sized(fgb, text, strlen(text), pos, fg_color, bg_color);
+    free_glyph_buffer_render_line_sized(fgb, text, strlen(text), &pos, fg_color, bg_color);
 }

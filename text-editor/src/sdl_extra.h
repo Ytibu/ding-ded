@@ -7,6 +7,7 @@
 const char *shader_type_as_cstr(GLuint shader);
 bool compile_shader_source(const GLchar *source, GLenum shader_type, GLuint *shader);
 bool compile_shader_file(const char *file_path, GLenum shader_type, GLuint *shader);
-bool link_program(GLuint vert_shader, GLuint frag_shader, GLuint *program);
+void attach_shaders_to_program(GLuint *shaders, size_t shaders_count, GLuint program);
+bool link_program(GLuint program);
 
 #endif // __SDL_EXTRA_H__
