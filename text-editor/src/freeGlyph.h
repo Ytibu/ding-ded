@@ -1,0 +1,79 @@
+#ifndef __FREE_GLYPH_H__
+#define __FREE_GLYPH_H__
+
+#include <stdio.h>
+
+#include <SDL3/SDL.h>
+#include <GL/glew.h>
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+#include "./la.h"
+
+typedef struct{
+    Vec2f pos;
+    Vec2f size;
+    Vec2f uv_pos;
+    Vec2f uv_size;
+    Vec4f fg_color;
+    Vec4f bg_color;
+} Free_Glyph;
+
+typedef enum{
+    FREE_GLYPH_ATTR_POS = 0,
+    FREE_GLYPH_ATTR_SIZE = 1,
+    FREE_GLYPH_ATTR_UV_POS = 2,
+    FREE_GLYPH_ATTR_UV_SIZE = 3,
+    FREE_GLYPH_ATTR_FG_COLOR = 4,
+    FREE_GLYPH_ATTR_BG_COLOR = 5,
+    COUNT_FREE_GLYPH_ATTRS,
+} Free_Glyph_Attr;
+
+typedef struct{
+    float ax;
+    float ay;
+
+    float bw;
+    float bh;
+
+    float bl;
+    float bt;
+
+    float tx;
+} Glyph_Metric;
+
+#define FREE_GLYPH_BUFFER_CAPACITY (1024 * 640)
+typedef struct{
+    GLuint vao;
+    GLuint vbo;
+    GLuint program;
+
+    FT_UInt atlas_width;
+    FT_UInt atlas_height;
+
+    GLuint glyphs_texture;
+
+    GLint resolution_uniform;
+    GLint time_uniform;
+    GLint camera_uniform;
+
+    size_t glyphs_count;
+    Free_Glyph glyphs[FREE_GLYPH_BUFFER_CAPACITY];
+
+    Glyph_Metric metrics[128];
+} Free_Glyph_Buffer;
+
+void free_glyph_buffer_init(Free_Glyph_Buffer *fgb, FT_Face font_face, const char* vertex_shader_path, const char* fragment_shader_path);
+void free_glyph_buffer_use(const Free_Glyph_Buffer *fgb);
+
+void free_glyph_buffer_clear(Free_Glyph_Buffer *fgb);
+void free_glyph_buffer_push(Free_Glyph_Buffer *fgb, Free_Glyph glyph);
+void free_glyph_buffer_sync(Free_Glyph_Buffer *fgb);
+void free_glyph_buffer_draw(Free_Glyph_Buffer *fgb);
+
+float free_glyph_buffer_cursor_pos(const Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, size_t col);
+void free_glyph_render_line_sized(Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, Vec4f fg_color, Vec4f bg_color);
+void free_glyph_render_line(Free_Glyph_Buffer *fgb, const char* text, Vec2f pos, Vec4f fg_color, Vec4f bg_color);
+
+#endif // __FREE_GLYPH_H__
