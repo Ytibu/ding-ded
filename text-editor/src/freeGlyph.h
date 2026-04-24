@@ -47,6 +47,7 @@ typedef struct{
 typedef struct{
     GLuint vao;
     GLuint vbo;
+    GLuint program;
 
     FT_UInt atlas_width;
     FT_UInt atlas_height;
@@ -64,12 +65,14 @@ typedef struct{
 } Free_Glyph_Buffer;
 
 void free_glyph_buffer_init(Free_Glyph_Buffer *fgb, FT_Face font_face, const char* vertex_shader_path, const char* fragment_shader_path);
+void free_glyph_buffer_use(const Free_Glyph_Buffer *fgb);
 
 void free_glyph_buffer_clear(Free_Glyph_Buffer *fgb);
 void free_glyph_buffer_push(Free_Glyph_Buffer *fgb, Free_Glyph glyph);
 void free_glyph_buffer_sync(Free_Glyph_Buffer *fgb);
 void free_glyph_buffer_draw(Free_Glyph_Buffer *fgb);
 
+float free_glyph_buffer_cursor_pos(const Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, size_t col);
 void free_glyph_render_line_sized(Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, Vec4f fg_color, Vec4f bg_color);
 void free_glyph_render_line(Free_Glyph_Buffer *fgb, const char* text, Vec2f pos, Vec4f fg_color, Vec4f bg_color);
 

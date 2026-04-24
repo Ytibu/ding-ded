@@ -14,7 +14,7 @@ LDFLAGS := -L$(SDL_ROOT)/lib -L$(GL_ROOT)/lib -L$(FT_ROOT)/lib
 LIBS := -lSDL3 -lm -lglew32 -lopengl32 "$(FT_LIB)"
 
 TARGET := te
-SRCS := src/main.c src/la.c src/editor.c src/font.c src/sdl_extra.c src/file.c src/head.c src/tileGlyph.c src/freeGlyph.c
+SRCS := src/main.c src/la.c src/editor.c src/font.c src/sdl_extra.c src/file.c src/head.c src/tileGlyph.c src/freeGlyph.c src/CursorRenderer.c
 
 $(TARGET): $(SRCS)
 	$(CC) $(CFLAGS) $(SRCS) -o $(TARGET) $(LDFLAGS) $(LIBS) 

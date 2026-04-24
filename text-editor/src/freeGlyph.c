@@ -56,7 +56,7 @@ void free_glyph_buffer_init(Free_Glyph_Buffer *fgb, FT_Face font_face,
     /////////////////////////////////////////////////
     /////////////////////////////////////////////////
 
-    GLuint vert_shader = 0, frag_shader = 0, shader_program = 0;
+    GLuint vert_shader = 0, frag_shader = 0;
     // 编译顶点着色器
     if (!compile_shader_file(vertex_shader_path, GL_VERTEX_SHADER, &vert_shader))
     {
@@ -70,18 +70,18 @@ void free_glyph_buffer_init(Free_Glyph_Buffer *fgb, FT_Face font_face,
         exit(EXIT_FAILURE);
     }
     // 链接着色器程序
-    if (!link_program(vert_shader, frag_shader, &shader_program))
+    if (!link_program(vert_shader, frag_shader, &fgb->program))
     {
         fprintf(stderr, "Failed to link shader program\n");
         exit(EXIT_FAILURE);
     }
 
-    glUseProgram(shader_program);
+    glUseProgram(fgb->program);
 
     // 获取 uniform 变量位置
-    fgb->time_uniform = glGetUniformLocation(shader_program, "time");
-    fgb->resolution_uniform = glGetUniformLocation(shader_program, "resolution");
-    fgb->camera_uniform = glGetUniformLocation(shader_program, "camera");
+    fgb->time_uniform = glGetUniformLocation(fgb->program, "time");
+    fgb->resolution_uniform = glGetUniformLocation(fgb->program, "resolution");
+    fgb->camera_uniform = glGetUniformLocation(fgb->program, "camera");
     
     ////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////
@@ -140,6 +140,13 @@ void free_glyph_buffer_init(Free_Glyph_Buffer *fgb, FT_Face font_face,
 
 }
 
+void free_glyph_buffer_use(const Free_Glyph_Buffer *fgb)
+{
+    glBindVertexArray(fgb->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, fgb->vbo);
+    glUseProgram(fgb->program);
+}
+
 void free_glyph_buffer_clear(Free_Glyph_Buffer *fgb)
 {
     fgb->glyphs_count = 0;
@@ -156,6 +163,21 @@ void free_glyph_buffer_sync(Free_Glyph_Buffer *fgb)
 void free_glyph_buffer_draw(Free_Glyph_Buffer *fgb)
 {
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, (GLsizei)fgb->glyphs_count);
+}
+
+float free_glyph_buffer_cursor_pos(const Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, size_t col)
+{
+    for (size_t i = 0; i < text_size; ++i) {
+        if (i == col) {
+            return pos.x;
+        }
+
+        Glyph_Metric metric = fgb->metrics[(int) text[i]];
+        pos.x += metric.ax;
+        pos.y += metric.ay;
+    }
+
+    return pos.x;
 }
 
 void free_glyph_render_line_sized(Free_Glyph_Buffer *fgb, const char *text, size_t text_size, Vec2f pos, Vec4f fg_color, Vec4f bg_color)
