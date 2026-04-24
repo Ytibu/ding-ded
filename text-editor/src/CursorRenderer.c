@@ -8,35 +8,30 @@
 
 void cursor_renderer_init(Cursor_Renderer *cursor, const char *vertex_shader_path, const char *fragment_shader_path)
 {
-    GLuint vert_shader = 0, frag_shader = 0;
+    GLuint shaders[3] = {0};
     // 编译顶点着色器
-    if (!compile_shader_file(vertex_shader_path, GL_VERTEX_SHADER, &vert_shader))
+    if (!compile_shader_file(vertex_shader_path, GL_VERTEX_SHADER, &shaders[0]))
     {
-        fprintf(stderr, "Failed to compile vertex shader\n");
-        exit(EXIT_FAILURE);
+        exit(1);
     }
-    // 编译片元着色器
-    if (!compile_shader_file(fragment_shader_path, GL_FRAGMENT_SHADER, &frag_shader))
+    if (!compile_shader_file(fragment_shader_path, GL_FRAGMENT_SHADER, &shaders[1]))
     {
-        fprintf(stderr, "Failed to compile fragment shader\n");
-        exit(EXIT_FAILURE);
+        exit(1);
     }
-    // 链接着色器程序
-    if (!link_program(vert_shader, frag_shader, &cursor->program))
+    if (!compile_shader_file("./shaders/camera.vert", GL_VERTEX_SHADER, &shaders[2]))
     {
-        fprintf(stderr, "Failed to link shader program\n");
-        exit(EXIT_FAILURE);
+        exit(1);
+    }
+
+    cursor->program = glCreateProgram();
+    attach_shaders_to_program(shaders, sizeof(shaders) / sizeof(shaders[0]), cursor->program);
+    if (!link_program(cursor->program))
+    {
+        exit(1);
     }
 
     glUseProgram(cursor->program);
-
-    // 获取 uniform 变量位置
-    cursor->time_uniform = glGetUniformLocation(cursor->program, "time");
-    cursor->resolution_uniform = glGetUniformLocation(cursor->program, "resolution");
-    cursor->camera_uniform = glGetUniformLocation(cursor->program, "camera");
-    cursor->pos_uniform = glGetUniformLocation(cursor->program, "pos");
-    cursor->height_uniform = glGetUniformLocation(cursor->program, "height");
-    cursor->last_stroke_uniform = glGetUniformLocation(cursor->program, "last_stroke");
+    get_uniform_location(cursor->program, cursor->uniforms);
 }
 void cursor_renderer_use(const Cursor_Renderer *cursor)
 {
@@ -45,7 +40,7 @@ void cursor_renderer_use(const Cursor_Renderer *cursor)
 
 void cursor_renderer_move(const Cursor_Renderer *cursor, Vec2f pos)
 {
-    glUniform2f(cursor->pos_uniform, pos.x, pos.y);
+    glUniform2f(cursor->uniforms[UNIFORM_SLOT_CURSOR_POS], pos.x, pos.y);
 }
 
 void cursor_renderer_draw()
