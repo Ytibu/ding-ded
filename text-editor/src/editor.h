@@ -5,39 +5,57 @@
 #include <stdio.h>
 
 typedef struct {
+    char *items;
+    size_t count;
+    size_t capacity;
+} Data;
+
+typedef struct{
+    size_t begin;
+    size_t end;
+} Line_;
+
+typedef struct {
+    Line_ *items;
+    size_t count;
+    size_t capacity;
+} Lines;
+
+typedef struct {
     size_t capacity;
     size_t size;
     char *chars;
-} Line; //定义行结构体，包含字符数组、当前大小和容量。
-
-void line_append_text(Line *line, const char *text);
-void line_append_text_sized(Line *line, const char *text, size_t text_size);
-
-void line_insert_text_before(Line *line, const char *text, size_t *col);
-void line_insert_text_before_sized(Line *line, const char *text, size_t text_size, size_t *col);
-
-void line_backspace(Line *line, size_t *col);
-void line_delete(Line *line, size_t *col);
-
+} Line;
 
 typedef struct{
-    size_t capacity;
-    size_t size;
-    Line *lines;
-    size_t cursor_row;
-    size_t cursor_col;
-} Editor; //定义编辑器结构体，包含行数组、当前行数、容量以及光标位置。
+    Data data;
+    Lines lines;
+    size_t cursor;
+} Editor;
 
+#define DATA_INIT_CAP 1024
+#define da_append(data_ptr, item) \
+    do { \
+        if ((data_ptr)->count == (data_ptr)->capacity) { \
+            size_t new_capacity = (data_ptr)->capacity == 0 ? DATA_INIT_CAP : (data_ptr)->capacity * 2; \
+            (data_ptr)->items = realloc((data_ptr)->items, new_capacity * sizeof(*(data_ptr)->items)); \
+            assert((data_ptr)->items != NULL && "Failed to allocate memory"); \
+            (data_ptr)->capacity = new_capacity; \
+        } \
+        (data_ptr)->items[(data_ptr)->count++] = (item); \
+    } while(0)
+
+void editor_recompute_lines(Editor *editor);
 void editor_save_to_file(const Editor *editor, const char* filePath);
 void editor_load_from_file(Editor *editor, FILE *file);
-
-void editor_insert_text_before_cursor(Editor *editor, const char *text);
 void editor_backspace(Editor *editor);
 void editor_delete(Editor *editor);
 
-void editor_insert_new_line(Editor *editor);
-void editor_push_new_line(Editor *editor);
-
-const char *editor_char_under_cursor(const Editor *editor);
+size_t editor_cursor_row(const Editor *editor);
+void editor_move_line_up(Editor *editor);
+void editor_move_line_down(Editor *editor);
+void editor_move_line_left(Editor *editor);
+void editor_move_line_right(Editor *editor);
+void editor_insert_char(Editor *editor, char c);
 
 #endif // __EDITOR_H__

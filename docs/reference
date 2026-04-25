@@ -1,0 +1,7 @@
+# Reference
+
+为了实现文本编辑时丝滑的进行换行符的删除和添加，引入rope结构体思想
+    Rope 结构体：https://www.luogu.com/article/u572fy4r
+
+To support smooth deletion and insertion of line breaks during text editing, this project introduces the Rope data structure concept.
+    Rope data structure: https://www.luogu.com/article/u572fy4r
