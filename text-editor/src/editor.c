@@ -11,213 +11,169 @@
 #define SV_IMPLEMENTATION
 #include "./sv.h"
 
-#define LINE_INIT_CAPACITY 1024
-#define EDITOR_INIT_CAPACITY 128
-
-
-static void line_grow(Line *line, size_t needed_capacity)
-{
-    size_t new_capacity = line->capacity;
-
-    assert(new_capacity >= line->size);
-    while (new_capacity - line->size < needed_capacity) {
-        if (new_capacity == 0) {
-            new_capacity = LINE_INIT_CAPACITY;
-        } else {
-            new_capacity *= 2;
-        }
-    }
-
-    if (new_capacity != line->capacity) {
-        line->chars = realloc(line->chars, new_capacity);
-        line->capacity = new_capacity;
-    }
-}
-
-void line_append_text(Line *line, const char *text)
-{
-    line_append_text_sized(line, text, strlen(text));
-}
-
-void line_append_text_sized(Line *line, const char *text, size_t text_size)
-{
-    size_t col = line->size;
-    line_insert_text_before_sized(line, text, text_size, &col);
-}
-
-
-void line_insert_text_before(Line *line, const char *text, size_t *col)
-{
-    line_insert_text_before_sized(line, text, strlen(text), col);
-}
-
-void line_insert_text_before_sized(Line *line, const char *text, size_t text_size, size_t *col)
-{
-    if(*col > line->size)
-    {
-        *col = line->size;
-    }
-
-    line_grow(line, text_size);
-    memmove(line->chars + *col + text_size, line->chars + *col, line->size - *col);
-    memcpy(line->chars + *col, text, text_size);
-    line->size += text_size;
-    *col += text_size;
-}
-
-void line_backspace(Line *line, size_t *col)
-{
-    if(*col > line->size)
-    {
-        *col = line->size;
-    }
-
-    if (*col > 0 && line->size > 0)
-    {
-        memmove(line->chars + *col - 1, line->chars + *col, line->size - *col);
-        line->size -= 1;
-        *col -= 1;
-    }
-}
-
-
-void line_delete(Line *line, size_t *col)
-{
-    if(*col > line->size)
-    {
-        *col = line->size;
-    }
-
-    if (*col < line->size && line->size > 0)
-    {
-        memmove(line->chars + *col, line->chars + *col + 1, line->size - *col);
-        line->size -= 1;
-    }
-}
-
-
-static void editor_grow(Editor *editor, size_t needed_capacity)
-{
-    size_t new_capacity = editor->capacity;
-
-    assert(new_capacity >= editor->size);
-    while (new_capacity - editor->size < needed_capacity) {
-        if (new_capacity == 0) {
-            new_capacity = EDITOR_INIT_CAPACITY;
-        } else {
-            new_capacity *= 2;
-        }
-    }
-
-    if (new_capacity != editor->capacity) {
-        editor->lines = realloc(editor->lines, new_capacity * sizeof(editor->lines[0]) );
-        editor->capacity = new_capacity;
-    }
-}
-
-void editor_init(Editor *editor)
-{
-    if(editor->cursor_row >= editor->size)
-    {
-        if(editor->size > 0){
-            editor->cursor_row = editor->size - 1;
-        }else{
-            editor_push_new_line(editor);
-        }
-    }
-}
-
-void editor_insert_new_line(Editor *editor)
-{
-    editor_init(editor);
-
-    editor_grow(editor, 1);
-
-    const size_t line_size = sizeof(editor->lines[0]);
-    memmove(editor->lines + editor->cursor_row + 1,
-            editor->lines + editor->cursor_row,
-            (editor->size - editor->cursor_row) * line_size);
-    memset(&editor->lines[editor->cursor_row + 1], 0, line_size);
-    editor->cursor_row += 1;
-    editor->cursor_col = 0;
-    editor->size += 1;
-}
-
-void editor_push_new_line(Editor *editor)
-{
-    editor_grow(editor, 1);
-    memset(&editor->lines[editor->size], 0, sizeof(editor->lines[0]));
-    editor->size += 1;
-}
- 
-void editor_insert_text_before_cursor(Editor *editor, const char *text)
-{
-    editor_init(editor);
-
-    line_insert_text_before(&editor->lines[editor->cursor_row], text, &editor->cursor_col);
-}
-
-void editor_backspace(Editor *editor)
-{
-    editor_init(editor);
-    line_backspace(&editor->lines[editor->cursor_row], &editor->cursor_col);
-}
-
-void editor_delete(Editor *editor)
-{
-    editor_init(editor);
-    line_delete(&editor->lines[editor->cursor_row], &editor->cursor_col);
-}
-
-const char *editor_char_under_cursor(const Editor *editor)
-{
-    if(editor->cursor_row < editor->size){
-        if(editor->cursor_col < editor->lines[editor->cursor_row].size){
-            return &editor->lines[editor->cursor_row].chars[editor->cursor_col];
-        }
-    }
-
-    return NULL;
-}
-
 void editor_save_to_file(const Editor *editor, const char* filePath)
 {
     FILE *file = fopen(filePath, "w");
     if(file == NULL){
-        fprintf(stdout, "ERROR: can't open file '%s': %s\n", filePath, strerror(errno));
+        fprintf(stderr, "ERROR: can't open file '%s': %s\n", filePath, strerror(errno));
         exit(EXIT_FAILURE);
     }
-    for(size_t row = 0; row < editor->size; ++row){
-        fwrite(editor->lines[row].chars, 1, editor->lines[row].size, file);
-        fputc('\n', file);
-    }
+
+    fwrite(editor->data.items, 1, editor->data.count, file);
     fclose(file);
+}
+
+static size_t file_size(FILE *file)
+{
+    // 截取当前位置，跳转到末尾并读取长度，最后恢复位置
+    long saved = ftell(file);
+    assert(saved >= 0 && "Failed to get file position");
+    int err = fseek(file, 0, SEEK_END);
+    assert(err == 0 && "Failed to seek to end of file");
+    long result = ftell(file);
+    assert(result >= 0 && "Failed to get file size");
+    err = fseek(file, saved, SEEK_SET);
+    assert(err == 0 && "Failed to restore file position");
+    return result;
 }
 
 void editor_load_from_file(Editor *editor, FILE *file)
 {
-    editor_init(editor);
+    editor->data.count = 0;
+    size_t size = file_size(file);
+    if(editor->data.capacity < size){
+        editor->data.capacity = size;
+        editor->data.items = realloc(editor->data.items, editor->data.capacity * sizeof(*editor->data.items));
+        assert(editor->data.items != NULL && "Failed to allocate memory");
+    }
 
-    static char chunk[640 * 1024];
-    while(!feof(file)){
-        size_t n = fread(chunk, 1, sizeof(chunk), file);
-        String_View chunk_sv = {
-            .data = chunk,
-            .count = n,
-        };
+    fread(editor->data.items, 1, size, file);
+    editor->data.count = size;
 
-        while(chunk_sv.count > 0){
-            String_View chunk_line = {0};
-            Line *line = &editor->lines[editor->size - 1];
-            if(sv_try_chop_by_delim(&chunk_sv, '\n', &chunk_line)){
-                line_append_text_sized(line, chunk_line.data, chunk_line.count);
-                editor_insert_new_line(editor);
-            }else{
-                line_append_text_sized(line, chunk_sv.data, chunk_sv.count);
-                chunk_sv = SV_NULL;
-            }
+    editor_recompute_lines(editor);
+}
+
+size_t editor_cursor_row(const Editor *editor)
+{
+    if (editor->lines.count == 0) return 0;
+    for(size_t row = 0; row < editor->lines.count; ++row){
+        Line_ line = editor->lines.items[row];  // 获取当前行的起始和结束位置
+        if(line.begin <= editor->cursor && editor->cursor <= line.end){
+            return row;
         }
     }
 
-    editor->cursor_row = 0;
+    return editor->lines.count - 1;
+}
+
+void editor_move_line_up(Editor *editor)
+{
+    size_t row = editor_cursor_row(editor);
+    size_t col = editor->cursor - editor->lines.items[row].begin;
+    if(row > 0){
+        Line_ prev_line = editor->lines.items[row - 1];
+        size_t prev_line_len = prev_line.end - prev_line.begin;
+        if(col > prev_line_len){
+            col = prev_line_len;
+        }
+        editor->cursor = prev_line.begin + col;
+    }
+
+}
+
+void editor_move_line_down(Editor *editor)
+{
+    size_t row = editor_cursor_row(editor);
+    size_t col = editor->cursor - editor->lines.items[row].begin;
+    if(row + 1 < editor->lines.count){
+        Line_ next_line = editor->lines.items[row + 1];
+        size_t next_line_len = next_line.end - next_line.begin;
+        if(col > next_line_len){
+            col = next_line_len;
+        }
+        editor->cursor = next_line.begin + col;
+    }
+}
+
+void editor_move_line_left(Editor *editor)
+{
+    if(editor->cursor > 0){
+        editor->cursor--;
+    }
+}
+
+void editor_move_line_right(Editor *editor)
+{
+    if(editor->cursor < editor->data.count){
+        editor->cursor++;
+    }
+}
+
+void editor_backspace(Editor *editor)
+{
+    if(editor->cursor > 0){
+        memmove(editor->data.items + editor->cursor - 1,
+                editor->data.items + editor->cursor,
+                editor->data.count - editor->cursor
+        );
+        editor->data.count--;
+        editor->cursor--;
+
+        editor_recompute_lines(editor);
+    }
+}
+
+void editor_delete(Editor *editor)
+{
+    if(editor->cursor < editor->data.count){
+        memmove(editor->data.items + editor->cursor,
+                editor->data.items + editor->cursor + 1,
+                editor->data.count - editor->cursor - 1
+        );
+        editor->data.count--;
+
+        editor_recompute_lines(editor);
+    }
+}
+
+void editor_insert_char(Editor *editor, char c)
+{
+    if(editor->cursor > editor->data.count){
+        editor->cursor = editor->data.count;
+    }
+    da_append(&editor->data, '\0');
+    memmove(editor->data.items + editor->cursor + 1,
+            editor->data.items + editor->cursor,
+            editor->data.count - editor->cursor - 1
+    );
+    editor->data.items[editor->cursor] = c;
+    editor->cursor++;
+
+    editor_recompute_lines(editor);
+}
+
+void editor_recompute_lines(Editor *editor)
+{
+    // 如果 lines 未初始化，自动初始化
+    if (editor->lines.items == NULL) {
+        editor->lines.capacity = 16;
+        editor->lines.items = calloc(editor->lines.capacity, sizeof(*editor->lines.items));
+        assert(editor->lines.items != NULL && "Failed to allocate memory for editor lines");
+    }
+    
+    editor->lines.count = 0;
+
+    Line_ line;
+    line.begin = 0;
+
+    for(size_t i = 0; i < editor->data.count; ++i){
+        if(editor->data.items[i] == '\n'){
+            line.end = i;
+            da_append(&editor->lines, line);
+            line.begin = i + 1;
+        }
+    }
+
+    line.end = editor->data.count;
+    da_append(&editor->lines, line);
 }
