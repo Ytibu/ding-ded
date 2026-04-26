@@ -30,13 +30,6 @@ static const Uniform_Def uniform_defs[COUNT_UNIFORM_SLOTS] = {
     },
 };
 
-const Uniform_Def *get_uniform_def(Uniform_Slot slot)
-{
-    assert(0 <= slot);
-    assert(slot < COUNT_UNIFORM_SLOTS);
-    return &uniform_defs[slot];
-}
-
 void get_uniform_location(GLuint program, GLint locations[COUNT_UNIFORM_SLOTS])
 {
     for (Uniform_Slot slot = 0; slot < COUNT_UNIFORM_SLOTS; ++slot) {
@@ -47,6 +40,7 @@ void get_uniform_location(GLuint program, GLint locations[COUNT_UNIFORM_SLOTS])
 
 void simple_renderer_init(Simple_Renderer *sr, const char *vertex_filePath, const char *colorFrag_filePath, const char *imageFrag_filePath, const char *epicFrag_filePath)
 {
+    sr->camera_scale = 3.0f;
     {
         glGenVertexArrays(1, &sr->vao);
         glBindVertexArray(sr->vao);
@@ -149,7 +143,7 @@ void simple_renderer_quad(Simple_Renderer *sr,
                           Vec2f uv0, Vec2f uv1, Vec2f uv2, Vec2f uv3)
 {
     simple_renderer_triangle(sr, p0, p1, p2, c0, c1, c2, uv0, uv1, uv2);
-    simple_renderer_triangle(sr, p0, p2, p3, c0, c2, c3, uv0, uv2, uv3);
+    simple_renderer_triangle(sr, p1, p2, p3, c1, c2, c3, uv1, uv2, uv3);
 }
 
 void simple_renderer_triangle(Simple_Renderer *sr,
@@ -165,13 +159,11 @@ void simple_renderer_triangle(Simple_Renderer *sr,
 void simple_renderer_image_rect(Simple_Renderer *sr, Vec2f pos, Vec2f size, Vec2f uv_pos, Vec2f uv_size)
 {
     Vec4f uv = vec4fs(0.0f);
-    simple_renderer_quad(sr,
-            pos, vec2f_add(pos, vec2f(size.x, 0.0f)), vec2f_add(pos, vec2f(0.0f, size.y)), vec2f_add(pos, size),
-            uv, uv, uv, uv,
-            uv_pos,
-            vec2f_add(uv_pos, vec2f(uv_size.x, 0.0f)),
-            vec2f_add(uv_pos, vec2f(0.0f, uv_size.y)),
-            vec2f_add(uv_pos, uv_size));
+    simple_renderer_quad(
+        sr,
+        pos, vec2f_add(pos, vec2f(size.x, 0.0f)), vec2f_add(pos, vec2f(0.0f, size.y)), vec2f_add(pos, size),
+        uv, uv, uv, uv,
+        uv_pos, vec2f_add(uv_pos, vec2f(uv_size.x, 0.0f)), vec2f_add(uv_pos, vec2f(0.0f, uv_size.y)), vec2f_add(uv_pos, uv_size));
 }
 
 void simple_renderer_solid_rect(Simple_Renderer *sr, Vec2f pos, Vec2f size, Vec4f color)
@@ -191,10 +183,6 @@ void simple_renderer_sync(Simple_Renderer *sr)
 void simple_renderer_draw(Simple_Renderer *sr)
 {
     glDrawArrays(GL_TRIANGLES, 0, sr->vertices_count);
-}
-void simple_renderer_clear(Simple_Renderer *sr)
-{
-    sr->vertices_count = 0;
 }
 
 void simple_renderer_flush(Simple_Renderer *sr)

@@ -41,7 +41,7 @@ void free_glyph_atlas_init(Free_Glyph_Atlas *atlas, FT_Face font_face)
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     // 先分配纹理空间
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, atlas->atlas_width, atlas->atlas_height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, atlas->atlas_width, atlas->atlas_height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
 
     // 把每个字符贴进 atlas
     int x = 0;
@@ -59,7 +59,7 @@ void free_glyph_atlas_init(Free_Glyph_Atlas *atlas, FT_Face font_face)
             atlas->metrics[i].bt = font_face->glyph->bitmap_top;
             atlas->metrics[i].tx = (float)x / (float)atlas->atlas_width;
             
-
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
             glTexSubImage2D(GL_TEXTURE_2D, 0, x, 0, bitmap->width, bitmap->rows, GL_RED, GL_UNSIGNED_BYTE, bitmap->buffer);
             x += bitmap->width;
             

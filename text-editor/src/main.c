@@ -31,11 +31,11 @@
 #define ZOOM_OUT_GLYPH_THRESHOLD 30
 
 Editor editor = {0};
-Uint32 last_stroke = {0};
-Vec2f camera_pos = {0};
-float camera_scale = 3.0f;
-float camera_scale_vel = 0.0f;
-Vec2f camera_vel = {0};
+Uint32 last_stroke = 0;  // 修正：使用简单的初始化而不是复合字面量
+// Vec2f camera_pos = {0};
+// float camera_scale = 3.0f;
+// float camera_scale_vel = 0.0f;
+// Vec2f camera_vel = {0};
 
 static Free_Glyph_Atlas atlas = {0};
 static Simple_Renderer sr = {0};
@@ -63,63 +63,59 @@ void render_editor(SDL_Window *window, Free_Glyph_Atlas *atlas, Simple_Renderer 
     sr->resolution = vec2f(w, h);
     sr->time = (float) SDL_GetTicks() / 1000.0f;
 
+    // Render text
     simple_renderer_set_shader(sr, SHADER_FOR_EPICNESS);
     {
-        for (size_t row = 0; row < editor->lines.count; ++row)
-        {
+        for (size_t row = 0; row < editor->lines.count; ++row) {
             Line_ line = editor->lines.items[row];
+
             const Vec2f begin = vec2f(0, -(float)row * FREE_GLYPH_FONT_SIZE);
             Vec2f end = begin;
             free_glyph_atlas_render_line_sized(
-                atlas, sr,
-                editor->data.items + line.begin,
-                line.end - line.begin,
+                atlas, sr, editor->data.items + line.begin, line.end - line.begin,
                 &end);
-
+            // TODO: the max_line_len should be calculated based on what's visible on the screen right now
             float line_len = fabsf(end.x - begin.x);
-
-            if (line_len > max_line_len)
-            {
+            if (line_len > max_line_len) {
                 max_line_len = line_len;
             }
         }
+
         simple_renderer_flush(sr);
     }
 
     Vec2f cursor_pos = vec2fs(0.0f);
     {
-
         size_t cursor_row = editor_cursor_row(editor);
         Line_ line = editor->lines.items[cursor_row];
         size_t cursor_col = editor->cursor - line.begin;
-        // 修正：使用正的Y坐标（向下为正），与字符渲染保持一致
-        cursor_pos.y = (float)cursor_row * FREE_GLYPH_FONT_SIZE;
-
+        cursor_pos.y = -(float) cursor_row * FREE_GLYPH_FONT_SIZE;
         cursor_pos.x = free_glyph_atlas_cursor_pos(
-            atlas,
-            editor->data.items + line.begin,
-            line.end - line.begin,
-            vec2f(0.0, cursor_pos.y),
-            cursor_col);
+                           atlas,
+                           editor->data.items + line.begin, line.end - line.begin,
+                           vec2f(0.0, cursor_pos.y),
+                           cursor_col
+                       );
     }
 
+    // Render cursor
     simple_renderer_set_shader(sr, SHADER_FOR_COLOR);
-
-    float CURSOR_WIDTH = 5.0f;
-    Uint32 CURSOR_BLINK_THRESHOLD = 500;
-    Uint32 CURSOR_BLINK_PERIOD = 1000;
-    Uint32 t = SDL_GetTicks() - last_stroke;
-
-    sr->vertices_count = 0;
-    if (t < CURSOR_BLINK_THRESHOLD || t / CURSOR_BLINK_PERIOD % 2 != 0)
     {
-        simple_renderer_solid_rect(
-            sr,
-            cursor_pos, vec2f(CURSOR_WIDTH, FREE_GLYPH_FONT_SIZE),
-            vec4fs(1));
-    }
+        float CURSOR_WIDTH = 5.0f;
+        Uint32 CURSOR_BLINK_THRESHOLD = 500;
+        Uint32 CURSOR_BLINK_PERIOD = 1000;
+        Uint32 t = SDL_GetTicks() - last_stroke;
 
-    simple_renderer_flush(sr);
+        sr->vertices_count = 0;
+        if (t < CURSOR_BLINK_THRESHOLD || t/CURSOR_BLINK_PERIOD%2 != 0) {
+            simple_renderer_solid_rect(
+                sr,
+                cursor_pos, vec2f(CURSOR_WIDTH, FREE_GLYPH_FONT_SIZE),
+                vec4fs(1));
+        }
+
+        simple_renderer_flush(sr);
+    }
 
     // Update camera
     {
@@ -133,8 +129,8 @@ void render_editor(SDL_Window *window, Free_Glyph_Atlas *atlas, Simple_Renderer 
         }
 
         sr->camera_vel = vec2f_mul(
-                         vec2f_sub(cursor_pos, sr->camera_pos),
-                         vec2fs(2.0f));
+                             vec2f_sub(cursor_pos, sr->camera_pos),
+                             vec2fs(2.0f));
         sr->camera_scale_vel = (target_scale - sr->camera_scale) * 2.0f;
 
         sr->camera_pos = vec2f_add(sr->camera_pos, vec2f_mul(sr->camera_vel, vec2fs(DELTA_TIME)));

@@ -74,6 +74,5 @@ void simple_renderer_image_rect(Simple_Renderer *sr, Vec2f pos, Vec2f size, Vec2
 void simple_renderer_flush(Simple_Renderer *sr);
 void simple_renderer_sync(Simple_Renderer *sr);
 void simple_renderer_draw(Simple_Renderer *sr);
-void simple_renderer_clear(Simple_Renderer *sr);
 
 #endif // __SIMPLE_RENDERER_H__

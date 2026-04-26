@@ -97,14 +97,22 @@ void editor_move_line_down(Editor *editor)
 
 void editor_move_line_left(Editor *editor)
 {
-    if(editor->cursor > 0){
+    size_t row = editor_cursor_row(editor);
+    Line_ line = editor->lines.items[row];
+    
+    // 如果光标在行首，不能继续向左移动
+    if (editor->cursor > line.begin) {
         editor->cursor--;
     }
 }
 
 void editor_move_line_right(Editor *editor)
 {
-    if(editor->cursor < editor->data.count){
+    size_t row = editor_cursor_row(editor);
+    Line_ line = editor->lines.items[row];
+    
+    // 如果光标在行尾，不能继续向右移动
+    if (editor->cursor < line.end) {
         editor->cursor++;
     }
 }
