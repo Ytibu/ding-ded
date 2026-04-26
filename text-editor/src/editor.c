@@ -55,6 +55,7 @@ void editor_load_from_file(Editor *editor, FILE *file)
 
 size_t editor_cursor_row(const Editor *editor)
 {
+    if (editor->lines.count == 0) return 0;
     for(size_t row = 0; row < editor->lines.count; ++row){
         Line_ line = editor->lines.items[row];  // 获取当前行的起始和结束位置
         if(line.begin <= editor->cursor && editor->cursor <= line.end){
@@ -153,6 +154,13 @@ void editor_insert_char(Editor *editor, char c)
 
 void editor_recompute_lines(Editor *editor)
 {
+    // 如果 lines 未初始化，自动初始化
+    if (editor->lines.items == NULL) {
+        editor->lines.capacity = 16;
+        editor->lines.items = calloc(editor->lines.capacity, sizeof(*editor->lines.items));
+        assert(editor->lines.items != NULL && "Failed to allocate memory for editor lines");
+    }
+    
     editor->lines.count = 0;
 
     Line_ line;

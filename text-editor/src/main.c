@@ -21,11 +21,15 @@
 #include "./sdl_extra.h"
 #include "./freeGlyph.h"
 #include "./CursorRenderer.h"
+#include "./simple_renderer.h"
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
 #define FPS 60
 #define DELTA_TIME (1.0f / FPS)
+
+#define FREE_GLYPH_FONT_SIZE 64
+#define ZOOM_OUT_GLYPH_THRESHOLD 30
 
 Editor editor = {0};
 Vec2f camera_pos = {0};
@@ -33,35 +37,22 @@ float camera_scale = 3.0f;
 float camera_scale_vel = 0.0f;
 Vec2f camera_vel = {0};
 
-void usage(FILE *stream)
-{
-    fprintf(stream, "Usage: te [FILE-PATH]\n");
-}
+static Free_Glyph_Buffer fgb = {0};
+static Cursor_Renderer cr = {0};
+static Simple_Renderer sr = {0};
 
-void MessageCallback(GLenum source,
-                     GLenum type,
-                     GLuint id,
-                     GLenum severity,
-                     GLsizei length,
-                     const GLchar *message,
-                     const void *userParam)
+// 错误回调函数，用于输出 OpenGL 错误信息
+void MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userParam)
 {
     (void)source;
     (void)id;
     (void)length;
     (void)userParam;
     fprintf(stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
-            (type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""),
-            type, severity, message);
+            (type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : ""), type, severity, message);
 }
 
-static Free_Glyph_Buffer fgb = {0};
-static Cursor_Renderer cr = {0};
-
-#define FREE_GLYPH_FONT_SIZE 64
-#define ZOOM_OUT_GLYPH_THRESHOLD 30
-
-void render_editor_into_fgb(SDL_Window *window, Free_Glyph_Buffer *fgb, Cursor_Renderer *cr, Editor *editor)
+void render_editor_into_fgb(SDL_Window *window, Free_Glyph_Buffer *fgb, Simple_Renderer *sr, Cursor_Renderer *cr, Editor *editor)
 {
     int w, h;
     SDL_GetWindowSize(window, &w, &h);
@@ -80,12 +71,9 @@ void render_editor_into_fgb(SDL_Window *window, Free_Glyph_Buffer *fgb, Cursor_R
         {
             for (size_t row = 0; row < editor->lines.count; ++row)
             {
-
                 Line_ line = editor->lines.items[row];
-
                 const Vec2f begin = vec2f(0, -(float)row * FREE_GLYPH_FONT_SIZE);
                 Vec2f end = begin;
-
                 free_glyph_buffer_render_line_sized(
                     fgb,
                     editor->data.items + line.begin,
@@ -153,12 +141,28 @@ void render_editor_into_fgb(SDL_Window *window, Free_Glyph_Buffer *fgb, Cursor_R
         camera_pos = vec2f_add(camera_pos, vec2f_mul(camera_vel, vec2fs(DELTA_TIME)));
         camera_scale = camera_scale + camera_scale_vel * DELTA_TIME;
     }
+
+#if 1
+    simple_renderer_use(sr);
+
+    glUniform2f(sr->uniforms[UNIFORM_SLOT_RESOLUTION], (float)w, (float)h);
+    glUniform1f(sr->uniforms[UNIFORM_SLOT_TIME], (float)SDL_GetTicks() / 1000.0f);
+    glUniform2f(sr->uniforms[UNIFORM_SLOT_CAMERA_POS], camera_pos.x, camera_pos.y);
+    glUniform1f(sr->uniforms[UNIFORM_SLOT_CAMERA_SCALE], camera_scale);
+
+    simple_renderer_clear(sr);
+    simple_renderer_triangle(sr,
+                             vec2f(-50.0f, -50.0f), vec2f(50.0f, -50.0f), vec2f(0.0f, 50.0f),
+                             vec4f(1, 0, 0, 1), vec4f(0, 1, 0, 1), vec4f(0.0, 0.0, 1, 1),
+                             vec2f(0, 0), vec2f(0, 0), vec2f(0, 0));
+    simple_renderer_sync(sr);
+    simple_renderer_draw(sr);
+#endif
 }
 
-int main(int argc, char **argv)
+// 字体加载
+FT_Face init_Font(const char *const font_file_path)
 {
-    /* Recompute lines only after the editor has been loaded or otherwise initialized. */
-
     FT_Library library = {0};
 
     FT_Error error = FT_Init_FreeType(&library);
@@ -167,8 +171,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "ERROR: could not initialize FreeType2 library\n");
         exit(1);
     }
-
-    const char *const font_file_path = "./VictorMono-Regular.ttf";
 
     FT_Face face;
     error = FT_New_Face(library, font_file_path, 0, &face);
@@ -191,8 +193,12 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    const char *file_path = NULL;
+    return face;
+}
 
+// 编辑区加载
+void init_editor(int argc, char **argv, const char *file_path)
+{
     if (argc > 1)
     {
         file_path = argv[1];
@@ -207,15 +213,26 @@ int main(int argc, char **argv)
             fclose(file);
         }
     }
+    else
+    {
+        editor_recompute_lines(&editor);
+    }
+}
+
+int main(int argc, char **argv)
+{
+    // 加载字体
+    FT_Face face = init_Font("./fonts/VictorMono-Regular.ttf");
+
+    // 加载编辑区内容
+    const char *file_path = NULL;
+    init_editor(argc, argv, file_path);
 
     scc(SDL_Init(SDL_INIT_VIDEO));
-
     SDL_Window *window =
-        scp(SDL_CreateWindow("Text Editor",
+        scp(SDL_CreateWindow("Glyph",
                              800, 600,
                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL));
-
-    // 开启文本输入，确保可以接收 SDL_EVENT_TEXT_INPUT 事件
     SDL_StartTextInput(window);
 
     {
@@ -234,20 +251,17 @@ int main(int argc, char **argv)
 
     if (GLEW_OK != glewInit())
     {
-        fprintf(stderr, "Could not initialize GLEW!");
-        exit(1);
+        ERROR("Could not initialize GLEW!");
     }
 
     if (!GLEW_ARB_draw_instanced)
     {
-        fprintf(stderr, "ARB_draw_instanced is not supported; game may not work properly!!\n");
-        exit(1);
+        ERROR("ARB_draw_instanced is not supported; game may not work properly!!");
     }
 
     if (!GLEW_ARB_instanced_arrays)
     {
-        fprintf(stderr, "ARB_instanced_arrays is not supported; game may not work properly!!\n");
-        exit(1);
+        ERROR("ARB_instanced_arrays is not supported; game may not work properly!!");
     }
 
     glEnable(GL_BLEND);
@@ -256,11 +270,11 @@ int main(int argc, char **argv)
     if (GLEW_ARB_debug_output)
     {
         glEnable(GL_DEBUG_OUTPUT);
-        glDebugMessageCallback(MessageCallback, 0);
+        INFO("No OpenGL debug output will be printed because GLEW_ARB_debug_output is not supported");
     }
     else
     {
-        fprintf(stderr, "WARNING! GLEW_ARB_debug_output is not available");
+        INFO("No OpenGL debug output will be printed (see previous line)");
     }
 
     free_glyph_buffer_init(&fgb,
@@ -270,7 +284,9 @@ int main(int argc, char **argv)
     cursor_renderer_init(&cr,
                          "./shaders/cursor.vert",
                          "./shaders/cursor.frag");
-
+    simple_renderer_init(&sr,
+                         "./shaders/simple.vert",
+                         "./shaders/simple.frag");
     bool quit = false;
     while (!quit)
     {
@@ -285,7 +301,6 @@ int main(int argc, char **argv)
                 quit = true;
             }
             break;
-
             case SDL_EVENT_KEY_DOWN:
             {
                 switch (event.key.key)
@@ -309,7 +324,6 @@ int main(int argc, char **argv)
 
                 case SDLK_RETURN:
                 {
-                    /* Insert newline character. */
                     editor_insert_char(&editor, '\n');
                     cursor_renderer_use(&cr);
                     glUniform1f(cr.uniforms[UNIFORM_SLOT_LAST_STROKE], (float)SDL_GetTicks() / 1000.0f);
@@ -374,16 +388,14 @@ int main(int argc, char **argv)
             }
         }
 
-        {
-            int w, h;
-            SDL_GetWindowSize(window, &w, &h);
-            glViewport(0, 0, w, h);
-        }
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+        glViewport(0, 0, w, h);
 
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        render_editor_into_fgb(window, &fgb, &cr, &editor);
+        render_editor_into_fgb(window, &fgb, &sr, &cr, &editor);
 
         SDL_GL_SwapWindow(window);
 

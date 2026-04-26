@@ -17,7 +17,7 @@ typedef struct
     GLenum type;
 } Attr_Def;
 
-const static Attr_Def glyph_attr_defs[COUNT_FREE_GLYPH_ATTRS] = {
+static const Attr_Def glyph_attr_defs[COUNT_FREE_GLYPH_ATTRS] = {
     [FREE_GLYPH_ATTR_POS] = {offsetof(Free_Glyph, pos), 2, GL_FLOAT},
     [FREE_GLYPH_ATTR_SIZE] = {offsetof(Free_Glyph, size), 2, GL_FLOAT},
     [FREE_GLYPH_ATTR_UV_POS] = {offsetof(Free_Glyph, uv_pos), 2, GL_FLOAT},
